@@ -1,0 +1,28 @@
+Project(Ksi)
+set(CMAKE_C_FLAGS_RELEASE "-O3")
+set(CMAKE_C_FLAGS_DEBUG "-O0 -g -fno-inline")
+if ("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
+ set(CMAKE_C_FLAGS_RELEASE "-Ofast")
+endif()
+
+enable_testing()
+set(PortAudio_DIR .)
+find_package(PortAudio REQUIRED)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --std=c11 -pthread -fsanitize=address")
+
+include_directories(src)
+set(builtins_lib)
+add_subdirectory(builtins)
+
+FIND_LIBRARY (DMALLOC_LIBRARY dmalloc /usr/lib /sw/lib)
+FIND_PATH (DMALLOC_INCLUDE_DIR dmalloc.h PATHS /usr/include /sw/include)
+IF(DMALLOC_LIBRARY)
+  ADD_DEFINITIONS(-D_USE_DMALLOC)
+  SET(LINK_TO_DMALLOC 1)
+ENDIF(DMALLOC_LIBRARY)
+
+add_subdirectory(src)
+add_subdirectory(tests)
+#add_subdirectory(libsamplerate)
+#include_directories(libsamplerate/src)
+#link_libraries(samplerate)

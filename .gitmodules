@@ -1,0 +1,6 @@
+[submodule "src/linenoise"]
+	path = src/linenoise
+	url = https://github.com/antirez/linenoise
+[submodule "CSP"]
+	path = CSP
+	url = https://github.com/BlueFlo0d/CSP

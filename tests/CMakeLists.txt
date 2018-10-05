@@ -1,0 +1,10 @@
+# tests
+include_directories(../src)
+aux_source_directory(. TESTS_SRCS)
+foreach(TEST_SRC ${TESTS_SRCS})
+add_executable("${TEST_SRC}.elf" ${TEST_SRC})
+target_link_libraries("${TEST_SRC}.elf" ksi)
+add_test(${TEST_SRC} "${TEST_SRC}.elf")
+file(READ "${TEST_SRC}.re" tre)
+set_tests_properties(${TEST_SRC} PROPERTIES PASS_REGULAR_EXPRESSION ${tre})
+endforeach(TEST_SRC ${TESTS_SRCS})
