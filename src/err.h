@@ -10,6 +10,7 @@
                 _(ksiErrorPortNotFound,"Port out of range")             \
                 _(ksiErrorSrcPortNotFound,"Source port out of range")   \
                 _(ksiErrorDesPortNotFound,"Destination port out of range") \
+                _(ksiErrorParamentNotFound,"Parament ID out of range") \
                 _(ksiErrorFixReq,"Fixed-input node required")           \
                 _(ksiErrorSrcFixReq,"Fixed-input source node required") \
                 _(ksiErrorDesFixReq,"Fixed-input destination node required") \
@@ -28,7 +29,8 @@
                 _(ksiErrorAlreadyStopped,"Already stopped")\
                 _(ksiErrorNoFinal,"No final output node")\
                 _(ksiErrorSyntax,"Syntax error")\
-                _(ksiErrorResIdNotFound,"No loaded time sequence resource with provided ID")
+                _(ksiErrorResIdNotFound,"No loaded time sequence resource with provided ID")\
+                _(ksiErrorType,"Incompatible input and output type")
 #define __err_enum(x,y) x,
 typedef enum{
         __err_list(__err_enum)

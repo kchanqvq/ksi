@@ -14,7 +14,7 @@ typedef void (*KsiNodeFunc)(struct _KsiNode *n,KsiData **inputBuffers,KsiData *o
 typedef struct _KsiMixerEnvEntry{
         int32_t srcPort;
         struct _KsiNode *src;
-        float gain;
+        KsiData gain;
         int32_t inputPort;
         struct _KsiMixerEnvEntry *next;
 } KsiMixerEnvEntry;
@@ -33,10 +33,14 @@ typedef struct _KsiNode{
         KsiData *outputBuffer;
 
 #define ksiNodePortTypeFloat 0x0
-#define ksiNodePortTypeGating 0x1
+#define ksiNodePortTypeGate 0x1
 #define ksiNodePortTypeInt32 0x2
         int8_t *outputTypes;
         int8_t *inputTypes;
+
+        int32_t paramentCount;
+        int8_t *paramentTypes;
+        KsiData *paraments;
 
         int32_t type;//type flags
 #define ksiNodeTypeInputMask 0xF

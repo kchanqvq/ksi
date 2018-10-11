@@ -1,13 +1,13 @@
 #include "dag.h"
 //input 0: freq (f)
-//input 1: gate (i32)
+//input 1: gate (g)
 //input 2: waveform type (i32)
 // 1 : sine
 // 2 : sawtooth
 // 3 : triangle
 // 4 : square
-//input 3: modulation
-//output 0: audio
+//input 3: modulation (f)
+//output 0: audio (f)
 #include "wavetable.h"
 #include <math.h>
 typedef struct{
@@ -25,11 +25,18 @@ void kscarletWavetableDestroy(KsiNode *n){
 }
 void kscarletWavetable(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
         plugin_env *env = (plugin_env *)n->args;
+        if(inputBuffers[1][0].i==-1){
+                return;
+        }
         for(int32_t i=0;i<n->e->framesPerBuffer;i++){
                 if(inputBuffers[1][i].i){
                         continue;
                 }
                 env->currentPos+=inputBuffers[0][i].f/n->e->framesPerSecond;
+                static count = 0;
+                if(env->currentPos!=env->currentPos&&!count){
+                        count++;
+                }
                 env->currentPos = remainderf(env->currentPos, 1.0f);
                 float mod = inputBuffers[3][i].f;
                 if(env->currentPos<0.0f)

@@ -14,16 +14,15 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
         case 'n':{
                 lptr++;
                 char i,o;
-                int32_t ic,oc;
-                int32_t type,gatingOutput;
+                int32_t type;
                 cmd = "New node";
-                int readcount = sscanf(lptr, "%c%"SCNd32"%c%"SCNd32",%"SCNd16",%"SCNd32, &i,&ic,&o,&oc,&type,&gatingOutput);
+                int readcount = sscanf(lptr, "%c%c%"SCNd16, &i,&o,&type);
 #define CHECK_READ(n)                                   \
                 if(readcount - n){                      \
                         cli_err_str="Invalid argument format."; \
                         goto cli_err;                   \
                 }
-                CHECK_READ(6);
+                CHECK_READ(3);
                 type<<=16;
                 switch(i){
                 case 'f':
@@ -47,7 +46,7 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
                         cli_err_str="Invalid output type.";
                         goto cli_err;
                 }
-                printf("Node created with id: %"PRId32"\n",ksiEngineAddNode(e, ksiNodeInit((KsiNode *)malloc(sizeof(KsiNode)), NULL, ic, oc, type, e, NULL,gatingOutput)));
+                printf("Node created with id: %"PRId32"\n",ksiEngineAddNode(e, ksiNodeInit((KsiNode *)malloc(sizeof(KsiNode)), type, e, NULL)));
         }
                 break;
         case 'w':{
@@ -64,11 +63,31 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
         case 'a':{
                 lptr++;
                 int32_t srcId,srcPort,desId,desPort;
-                float gain;
-                int readcount = sscanf(lptr,"%"SCNd32":%"SCNd32">%"SCNd32":%"SCNd32"x%f",&srcId,&srcPort,&desId,&desPort,&gain);
+                int consumed;
+                int readcount = sscanf(lptr,"%"SCNd32":%"SCNd32">%"SCNd32":%"SCNd32"x%n",&srcId,&srcPort,&desId,&desPort,&consumed);
+                lptr+=consumed;
                 cmd = "Make adjustable wire";
-                CHECK_READ(5);
-                err = ksiEngineMakeAdjustableWire(e, srcId, srcPort, desId, desPort, gain);
+                CHECK_READ(4);
+                int8_t t;
+                err=ksiEngineGetInputType(e, desId, desPort, &t);
+                if(err)
+                        goto rt_err;
+#define INPUT_G(g,t) \
+                KsiData g;\
+                if(t==ksiNodePortTypeFloat){\
+                        float gain;\
+                        readcount = sscanf(lptr,"%f",&gain);\
+                        CHECK_READ(1);\
+                        g.f = gain;\
+                }\
+                else{\
+                        int32_t gain;\
+                        readcount = sscanf(lptr, "%"SCNd32, &gain);\
+                        CHECK_READ(1);\
+                        g.i=gain;\
+                }
+                INPUT_G(g,t);
+                err = ksiEngineMakeAdjustableWire(e, srcId, srcPort, desId, desPort, g);
                 if(err)
                         goto rt_err;
         }
@@ -140,7 +159,7 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
                 lptr++;
                 cmd = "Set time";
                 size_t newt;
-                int readcount = sscanf(line, "%zu", &newt);
+                int readcount = sscanf(lptr, "%zu", &newt);
                 CHECK_READ(1);
                 e->timeStamp = newt;
                 break;
@@ -149,9 +168,45 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
                 lptr++;
                 double t;
                 cmd = "Set time";
-                int readcount = sscanf(line, "%lf", &t);
+                int readcount = sscanf(lptr, "%lf", &t);
                 CHECK_READ(1);
                 e->timeStamp = round(t/e->framesPerSecond);
+                break;
+        }
+        case 'b':{
+                lptr++;
+                cmd = "Make bias";
+                int32_t id,port;
+                int consumed;
+                int readcount = sscanf(lptr, "%"SCNd32":%"SCNd32"x%n",&id,&port,&consumed);
+                CHECK_READ(2);
+                lptr+=consumed;
+                int8_t t;
+                err = ksiEngineGetInputType(e, id, port, &t);
+                if(err)
+                        goto rt_err;
+                INPUT_G(g, t);
+                err = ksiEngineMakeAdjustableBias(e, id, port, g);
+                if(err)
+                        goto rt_err;
+                break;
+        }
+        case 'S':{
+                lptr++;
+                cmd = "Set parament";
+                int32_t id,pid;
+                int consumed;
+                int readcount = sscanf(lptr, "%"SCNd32":%"SCNd32"x%n", &id,&pid,&consumed);
+                CHECK_READ(2);
+                lptr+=consumed;
+                int8_t t;
+                err = ksiEngineGetParamentType(e, id, pid, &t);
+                if(err)
+                        goto rt_err;
+                INPUT_G(g, t);
+                err = ksiEngineSetParament(e, id, pid, g);
+                if(err)
+                        goto rt_err;
                 break;
         }
         case 'q':
@@ -162,19 +217,21 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
         }
         case 'h':{
                 fputs("COMMAND LIST\n"
-                      "New node: n[Input type][Input port count][Output type][Output port count],[Built-in type],[Gating Output]\n"
+                      "New node: n[Input type][Output type][Built-in type]\n"
                       " Input type: f for fixed number of input wire and m for mixer-support input\n"
                       " Output type: n for normal and f for final output of the whole engine\n"
                       " Note: Will print the ID for the new node\n"
                       "Make direct wire:w[Source ID]: [Source port]>[Destination ID]:[Destination port]\n"
                       " Note: Destination node's input type must be f\n"
                       "Make adjustable wire: a[Source ID]:[Source port]>[Destination ID]:[Destination port]x[Gain]\n"
+                      "Make bias: b[Node ID]:[Port]x[Bias]\n"
                       " Note: Destination node's input type must be m\n"
                       "       Duplicated wire will be automatically merged with a warning message\n"
                       "Remove node: r[ID]\n"
                       "Remove wire: u[Source ID]:[Source port]>[Destination ID]:[Destination port]\n"
                       "Load time sequence resource file: o[file name]\n"
                       "Unload time sequence resource file: t[resource id]\n"
+                      "Set parament:S[Node ID]:[Parament ID]x[Value]"
                       "Start playing: p\n"
                       "Stop playing: s\n"
                       "Load command list from file: l[file name]\n"

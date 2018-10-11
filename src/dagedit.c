@@ -11,6 +11,21 @@
                 return err
 #define CHECK_DES_PORT(node,port,err) if(!(port<node->inputCount))  \
                 return err
+#define CHECK_PARA(node,pid,err) if(!(pid<node->paramentCount))    \
+                return err
+static inline void ksiDataIncrease(KsiData* s,KsiData i,int8_t type){
+        switch(type){
+        case ksiNodePortTypeFloat:
+                s->f += i.f;
+                break;
+        case ksiNodePortTypeInt32:
+                s->i += i.i;
+                break;
+        case ksiNodePortTypeGate:
+                s->i |= i.i;
+                break;
+        }
+}
 void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,int nprocs){
         e->framesPerBuffer = framesPerBuffer;
         e->framesPerSecond = framesPerSecond;
@@ -51,7 +66,7 @@ int32_t ksiEngineAddNode(KsiEngine *e,KsiNode *n){
         n->id = ret;
         return ret;
 }
-KsiError ksiEngineMakeAdjustableWire(KsiEngine *e,int32_t srcId,int32_t srcPort,int32_t desId,int32_t desPort,float gain){
+KsiError ksiEngineMakeAdjustableWire(KsiEngine *e,int32_t srcId,int32_t srcPort,int32_t desId,int32_t desPort,KsiData gain){
         CHECK_ID(srcId, ksiErrorSrcIdNotFound);
         CHECK_ID(desId, ksiErrorDesIdNotFound);
         KsiNode *src = (KsiNode *)e->nodes.data[srcId];
@@ -62,9 +77,12 @@ KsiError ksiEngineMakeAdjustableWire(KsiEngine *e,int32_t srcId,int32_t srcPort,
                 return ksiErrorDesMixReq;
         }
         KsiMixerEnvEntry *me = des->env.mixer.predecessors;
+        int8_t type = des->inputTypes[desPort];
+        if(type!=src->outputTypes[srcPort])
+                return ksiErrorType;
         while(me){
                 if(me->src == src&&me->srcPort==srcPort&&me->inputPort==desPort){
-                        me->gain+=gain;
+                        ksiDataIncrease(&me->gain, gain, type);
                         return ksiErrorNone;
                 }
                 me=me->next;
@@ -84,7 +102,7 @@ KsiError ksiEngineMakeAdjustableWire(KsiEngine *e,int32_t srcId,int32_t srcPort,
         des->env.mixer.predecessors = newEntry;
         return ksiErrorNone;
 }
-KsiError ksiEngineMakeAdjustableBias(KsiEngine *e,int32_t desId,int32_t desPort,float bias){
+KsiError ksiEngineMakeAdjustableBias(KsiEngine *e,int32_t desId,int32_t desPort,KsiData bias){
         CHECK_ID(desId, ksiErrorIdNotFound);
         KsiNode *des = (KsiNode *)e->nodes.data[desId];
         CHECK_DES_PORT(des, desPort, ksiErrorPortNotFound);
@@ -92,26 +110,43 @@ KsiError ksiEngineMakeAdjustableBias(KsiEngine *e,int32_t desId,int32_t desPort,
                 return ksiErrorDesMixReq;
         }
         KsiMixerEnvEntry *me = des->env.mixer.predecessors;
+        int8_t type = des->inputTypes[desPort];
         while(me){
-                if(me->src == NULL&&me->srcPort==srcPort&&me->inputPort==desPort){
-                        me->gain+=gain;
+                if(me->src == NULL&&me->inputPort==desPort){
+                        ksiDataIncrease(&me->gain, bias, type);
                         return ksiErrorNone;
                 }
                 me=me->next;
         }
-        if(!ksiVecIdlistSearch(src->successors, desId)){
-                ksiVecIdlistPush(&src->successors, desId);
-                des->depNum++;
-        }
         assert((des->type&ksiNodeTypeInputMask)==ksiNodeTypeInputMixer);
-        assert((src->type&ksiNodeTypeOutputMask)!=ksiNodeTypeOutputFinal);
         KsiMixerEnvEntry *newEntry = (KsiMixerEnvEntry *)malloc(sizeof(KsiMixerEnvEntry));
-        newEntry->src=src;
-        newEntry->srcPort=srcPort;
-        newEntry->gain = gain;
+        newEntry->src=NULL;
+        newEntry->srcPort=0;
+        newEntry->gain = bias;
         newEntry->next = des->env.mixer.predecessors;
         newEntry->inputPort = desPort;
         des->env.mixer.predecessors = newEntry;
+        return ksiErrorNone;
+}
+KsiError ksiEngineGetInputType(KsiEngine *e,int32_t id,int32_t port,int8_t *t){
+        CHECK_ID(id, ksiErrorIdNotFound);
+        KsiNode *n = (KsiNode *)e->nodes.data[id];
+        CHECK_DES_PORT(n, port, ksiErrorPortNotFound);
+        *t = n->inputTypes[port];
+        return ksiErrorNone;
+}
+KsiError ksiEngineGetParamentType(KsiEngine *e,int32_t id,int32_t pid,int8_t *t){
+        CHECK_ID(id, ksiErrorIdNotFound);
+        KsiNode *n = (KsiNode *)e->nodes.data[id];
+        CHECK_PARA(n, pid, ksiErrorParamentNotFound);
+        *t = n->paramentTypes[pid];
+        return ksiErrorNone;
+}
+KsiError ksiEngineSetParament(KsiEngine *e,int32_t id,int32_t pid,KsiData d){
+        CHECK_ID(id, ksiErrorIdNotFound);
+        KsiNode *n = (KsiNode *)e->nodes.data[id];
+        CHECK_PARA(n, pid, ksiErrorParamentNotFound);
+        n->paraments[pid] = d;
         return ksiErrorNone;
 }
 KsiError ksiEngineMakeDirectWire(KsiEngine *e,int32_t srcId,int32_t srcPort,int32_t desId,int32_t desPort){
@@ -292,51 +327,58 @@ KsiError ksiEngineDetachNodes(KsiEngine *e,int32_t srcId,int32_t desId){
         ksiVecListDelete(src->successors, ->loc == desId, break, KsiVecIdlistNode);
         return ksiErrorNone;
 }
-KsiNode *ksiNodeInit(KsiNode *n,KsiNodeFunc f,int32_t inputCount,int32_t outputCount,int32_t typeFlags,KsiEngine *e,void *args,int32_t gatingOutput){
+KsiNode *ksiNodeInit(KsiNode *n,int32_t typeFlags,KsiEngine *e,void *args){
         atomic_init(&n->depCounter,0);
         n->successors = NULL;
-        n->outputCount = outputCount;
         n->type = typeFlags;
         n->args = args;
         n->depNum = 0;
         n->e = e;
-        n->f = f;
-        n->inputCount = inputCount;
-        n->gatingOutput = gatingOutput;
-        n->outputTypes = (int8_t *)malloc(sizeof(int8_t)*outputCount);
-        if(!(gatingOutput<0)){
-                n->outputTypes[gatingOutput] = ksiNodeOutputTypeGating;
+#define INLINE_INIT_MF(__,id,name,prop,in,out,para,...) __ _N()(id,name,LISTCOUNT in,LISTCOUNT out,LISTCOUNT para,_E prop)
+#define INLINE_INIT(_) _E(INLINE_LIST(INLINE_INIT_MF,_,INLINE_INPORT_END))
+        switch(ksiNodeTypeInlineId(typeFlags)){
+#define DEF_INIT(id,name,ni,no,np,res,dm,gp,...) case id: \
+                n->inputCount = ni;      \
+                n->inputTypes = CAT(name,InPorts);    \
+                n->outputCount = no;\
+                n->paramentCount = np;\
+                n->outputTypes = CAT(name,OutPorts);    \
+                n->paramentTypes = CAT(name,Paraments);    \
+                n->gatingOutput=gp;                   \
+                break;
+                INLINE_INIT(DEF_INIT);
         }
+        n->paraments = (KsiData *)malloc(sizeof(KsiData)*n->paramentCount);
+#undef DEF_INPORT
         switch(typeFlags&ksiNodeTypeInputMask){
         case ksiNodeTypeInputFixed:
-                n->env.fixed.predecessorBuffers = (KsiData **)malloc(sizeof(KsiData *)*inputCount);
-                n->env.fixed.predecessors = (KsiNode **)malloc(sizeof(KsiNode *)*inputCount);
-                memset(n->env.fixed.predecessors, 0, sizeof(KsiNode *)*inputCount);
+                n->env.fixed.predecessorBuffers = (KsiData **)malloc(sizeof(KsiData *)*n->inputCount);
+                n->env.fixed.predecessors = (KsiNode **)malloc(sizeof(KsiNode *)*n->inputCount);
+                memset(n->env.fixed.predecessors, 0, sizeof(KsiNode *)*n->inputCount);
+                memset(n->env.fixed.predecessorBuffers, 0, sizeof(KsiData **)*n->inputCount);
                 break;
         case ksiNodeTypeInputMixer:
                 n->env.mixer.predecessors = NULL;
-                n->env.mixer.internalBuffer = (KsiData *)malloc(sizeof(KsiData)*e->framesPerBuffer*inputCount);
-                n->env.mixer.internalBufferPtr = (KsiData **)malloc(sizeof(KsiData *)*inputCount);
-                for(int32_t i=0;i<inputCount;i++){
+                n->env.mixer.internalBuffer = (KsiData *)malloc(sizeof(KsiData)*e->framesPerBuffer*n->inputCount);
+                n->env.mixer.internalBufferPtr = (KsiData **)malloc(sizeof(KsiData *)*n->inputCount);
+                for(int32_t i=0;i<n->inputCount;i++){
                         n->env.mixer.internalBufferPtr[i] = n->env.mixer.internalBuffer + e->framesPerBuffer*i;
                 }
         }
         switch(typeFlags&ksiNodeTypeOutputMask){
         case ksiNodeTypeOutputNormal:
-                n->outputBuffer = (KsiData *)malloc(sizeof(KsiData)*e->framesPerBuffer*outputCount);
+                n->outputBuffer = (KsiData *)malloc(sizeof(KsiData)*e->framesPerBuffer*n->outputCount);
                 break;
         case ksiNodeTypeOutputFinal:
                 e->outputBufferPointer = (void **)&n->outputBuffer;
                 break;
         }
         switch(ksiNodeTypeInlineId(n->type)){
-#define INLINE_CASE(id,name,reqrs,dm)                 \
+#define INLINE_CASE(id,name,reqrs,dm,...)              \
                 case id:                            \
-                        if(dm){                  \
-                                CAT(name,Init)(n); \
-                        }                           \
+                        CONDITIONAL(dm,CAT(name,Init)(n));  \
                         break;
-                INLINE_LIST(INLINE_CASE);
+                INLINE_PROPERTY(INLINE_CASE);
 #undef INLINE_CASE
         default:
                 break;
@@ -344,7 +386,6 @@ KsiNode *ksiNodeInit(KsiNode *n,KsiNodeFunc f,int32_t inputCount,int32_t outputC
         return n;
 }
 KsiNode *ksiNodeDestroy(KsiNode *n){
-        free(n->outputTypes);
         switch(n->type&ksiNodeTypeOutputMask){
         case ksiNodeTypeOutputNormal:
                 free(n->outputBuffer);
@@ -352,6 +393,7 @@ KsiNode *ksiNodeDestroy(KsiNode *n){
         case ksiNodeTypeOutputFinal:
                 break;
         }
+        free(n->paraments);
         ksiVecListDestroy(n->successors, KsiVecIdlistNode);
         switch(n->type&ksiNodeTypeInputMask){
         case ksiNodeTypeInputFixed:
@@ -364,13 +406,12 @@ KsiNode *ksiNodeDestroy(KsiNode *n){
                 free(n->env.mixer.internalBufferPtr);
         }
         switch(ksiNodeTypeInlineId(n->type)){
-#define INLINE_CASE(id,name,reqrs,dm)               \
+#define INLINE_CASE(id,name,reqrs,dm,gp,dt,...)     \
                 case id:                            \
-                        if(dm){                     \
-                                CAT(name,Destroy)(n);  \
-                        }                           \
+                        CONDITIONAL(dm,CAT(name,Destroy)(n));   \
+                        CONDITIONAL(dt,free(n->outputTypes));   \
                         break;
-                INLINE_LIST(INLINE_CASE);
+                INLINE_PROPERTY(INLINE_CASE);
 #undef INLINE_CASE
         default:
                 break;
@@ -420,7 +461,12 @@ void ksiNodeSerialize(KsiNode *n,FILE *fp){
         {
                 KsiMixerEnvEntry *me = n->env.mixer.predecessors;
                 while(me){
-                        fprintf(fp, "%"PRId32":%"PRId32"x%f>%"PRId32",", me->src->id,me->srcPort,me->gain,me->inputPort);
+                        if(me->src){
+                                fprintf(fp, "%"PRId32":%"PRId32"x%f>%"PRId32",", me->src->id,me->srcPort,me->gain.f,me->inputPort);//TODO print gain properly
+                        }
+                        else{
+                                fprintf(fp, "o%f>%"PRId32",",me->gain.f,me->inputPort);
+                        }
                         me = me->next;
                 }
         }

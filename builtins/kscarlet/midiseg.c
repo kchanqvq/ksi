@@ -1,6 +1,7 @@
 #include "dag.h"
 //output 0: freq
 //output 1: gating
+//parament 0: resource ID
 #include "midiseg.h"
 #include <math.h>
 #include "rbtree.h"
@@ -25,12 +26,10 @@ void kscarletMidiSegInit(KsiNode *n){
         n->args=malloc(sizeof(plugin_env));
         plugin_env *env = (plugin_env *)n->args;
         env->current=NULL;
-        int32_t id;
-        ksiTimeSeqLoadToEngineFromTextFilePath(n->e, "test.mf", &id);
-        env->root = n->e->timeseqResources.data[id];
 }
 void kscarletMidiSegReset(KsiNode *n){
         plugin_env *env = (plugin_env *)n->args;
+        env->root = n->e->timeseqResources.data[n->paraments[0].i];
         env->offset = 0;
         env->segLength = 44100;
         env->cycleEnd = 44100;
@@ -57,7 +56,6 @@ void kscarletMidiSeg(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         env->current = ksiRBNodeNext(env->current);
                         if(env->current){
                                 localNextEvent = env->current->key - n->e->timeStamp;
-                                //printf("%"PRId8",%f\n",env->current->data.note.tone, env->currentFreq);
                         }
                         else
                                 localNextEvent = -1;
@@ -67,8 +65,9 @@ void kscarletMidiSeg(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
         }
         return;
 bypass:
-        if(env->currentGating)
-                outputBuffer[1].i = -1;
+        if(env->currentGating){
+                outputBuffer[bufsize].i = -1;
+        }
         else{
                 for(int32_t i=0;i<bufsize;i++){
                         outputBuffer[i+bufsize].i = 0;
