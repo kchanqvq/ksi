@@ -4,5 +4,3 @@
 INLINE_INPORT(DEF_INPORT)
 #define DEF_OUTPORT(id,name,n,i) int8_t CAT(name,OutPorts)[] = {_E i};
 INLINE_OUTPORT(DEF_OUTPORT)
-#define DEF_PARA(id,name,n,i) int8_t CAT(name,Paraments)[] = {_E i};
-INLINE_PARA(DEF_PARA)

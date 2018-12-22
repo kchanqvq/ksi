@@ -8,16 +8,19 @@
 #include "sem.h"
 #include "lcrq/queue.h"
 #include <portaudio.h>
-typedef union{int32_t i;float f;} KsiData;
 struct _KsiNode;
+typedef union{int32_t i;float f;} KsiData;
 typedef void (*KsiNodeFunc)(struct _KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer);
 typedef struct _KsiMixerEnvEntry{
         int32_t srcPort;
         struct _KsiNode *src;
         KsiData gain;
-        int32_t inputPort;
         struct _KsiMixerEnvEntry *next;
 } KsiMixerEnvEntry;
+typedef struct{
+        KsiData *buffer;//when NULL, direct store src output ptr into internalBufferPtr
+        KsiMixerEnvEntry *mixer;
+} KsiPortEnv;
 struct _KsiEngine;
 typedef struct _KsiNode{
         _Atomic int depCounter;
@@ -28,24 +31,27 @@ typedef struct _KsiNode{
         int32_t id;
 
         KsiVecIdlistNode *successors;
-        int32_t gatingOutput;//1 for bypass, 0 for enable
+        //For gating: 1 for bypass, 0 for enable
         int32_t outputCount;
         KsiData *outputBuffer;
 
 #define ksiNodePortTypeFloat 0x0
 #define ksiNodePortTypeGate 0x1
 #define ksiNodePortTypeInt32 0x2
+#define ksiNodePortTypeMask 0xF
+#define ksiNodePortIOMask 0xF0
+#define ksiNodePortIODirty 0x10 //A buffer of updates
+#define ksiNodePortIOClear(t) t=((t)&~ksiNodePortIOMask)
+#define ksiNodePortIOSetDirty(t) t=((t)&~ksiNodePortIOMask)|ksiNodePortIODirty
+#define ksiNodeRefreshCache(n,p,i) if(n->inputTypes[p]&ksiNodePortIODirty) \
+        n->inputCache[p] = inputBuffers[p][i];
         int8_t *outputTypes;
         int8_t *inputTypes;
 
-        int32_t paramentCount;
-        int8_t *paramentTypes;
-        KsiData *paraments;
+        KsiData *outputCache;
+        KsiData *inputCache;
 
         int32_t type;//type flags
-#define ksiNodeTypeInputMask 0xF
-#define ksiNodeTypeInputFixed 0
-#define ksiNodeTypeInputMixer 1
 #define ksiNodeTypeOutputMask 0xF0
 #define ksiNodeTypeOutputNormal 0x00
 #define ksiNodeTypeOutputFinal 0x10
@@ -55,25 +61,19 @@ typedef struct _KsiNode{
 #define ksiNodeTypeInlineId(t) (((t)&ksiNodeTypeInlineNodeFuncMask)>>16)
         void *args;
         int32_t inputCount;
-        union{
-                struct {
-                        KsiData **predecessorBuffers;
-                        struct _KsiNode **predecessors;
-                } fixed;
-                struct {
-                        KsiMixerEnvEntry *predecessors;
-                        KsiData *gatingBuffer;
-                        KsiData *internalBuffer;
-                        KsiData **internalBufferPtr;
-                } mixer;
+        struct {
+                KsiPortEnv *portEnv;//one portEnv for each input port
+                KsiData **internalBufferPtr;
         } env;
 } KsiNode;
+static inline KsiData ksiNodeGetInput(KsiNode *n,KsiData **ib,int32_t port,int32_t i){
+        return (n->inputTypes[i]&ksiNodePortIODirty)?ib[port][i]:n->inputCache[i];
+}
 typedef struct _KsiVecNodelistNode{
         struct _KsiVecNodelistNode *next;
         KsiNode *node;
 } KsiVecNodelistNode;
 ksiVecDeclareList(VecNodelist, KsiNode*, node);
-
 typedef struct _KsiEngine{
         int32_t framesPerBuffer;
         int32_t framesPerSecond;

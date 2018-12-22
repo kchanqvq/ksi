@@ -12,10 +12,6 @@
 #include <math.h>
 typedef struct{
         float currentPos;
-        float *sampleBuffer;
-        int32_t sampleLen;
-        float *freqBuffer;
-        float *modulationBuffer;
 } plugin_env;
 void kscarletWavetableInit(KsiNode *n){
         n->args = malloc(sizeof(plugin_env));
@@ -23,16 +19,25 @@ void kscarletWavetableInit(KsiNode *n){
 void kscarletWavetableDestroy(KsiNode *n){
         free(n->args);
 }
+#define $freq (n->inputCache[0].f)
+#define $gate (n->inputCache[1].i)
+#define $wf (n->inputCache[2].i)
+#define $mod (n->inputCache[3].i)
 void kscarletWavetable(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
         plugin_env *env = (plugin_env *)n->args;
-        if(inputBuffers[1][0].i==-1){
+        if($gate&&!(n->inputTypes[1]&ksiNodePortIODirty)){
+                ksiNodePortIOClear(n->outputTypes[0]);
                 return;
         }
         for(int32_t i=0;i<n->e->framesPerBuffer;i++){
-                if(inputBuffers[1][i].i){
+                ksiNodeRefreshCache(n, 0, i);
+                ksiNodeRefreshCache(n, 1, i);
+                ksiNodeRefreshCache(n, 2, i);
+                ksiNodeRefreshCache(n, 3, i);
+                if($gate){
                         continue;
                 }
-                env->currentPos+=inputBuffers[0][i].f/n->e->framesPerSecond;
+                env->currentPos+=$freq/n->e->framesPerSecond;
                 static count = 0;
                 if(env->currentPos!=env->currentPos&&!count){
                         count++;
@@ -41,7 +46,7 @@ void kscarletWavetable(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                 float mod = inputBuffers[3][i].f;
                 if(env->currentPos<0.0f)
                         env->currentPos+=1.0f;
-                switch(inputBuffers[2][i].i){
+                switch($wf){
                 case 1:
                         outputBuffer[i].f=sinf(env->currentPos*2*M_PI);
                         break;
@@ -56,4 +61,5 @@ void kscarletWavetable(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         break;
                 }
         }
+        ksiNodePortIOSetDirty(n->outputTypes[0]);
 }

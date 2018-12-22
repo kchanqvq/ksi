@@ -30,30 +30,26 @@ void kscarletADSRDestroy(KsiNode *n){
 void kscarletADSRReset(KsiNode *n){
         plugin_env *env = (plugin_env *)n->args;
         env->currentStage = stageHalt;
+        env->currentMod = 0.0f;
 }
+
 void kscarletADSR(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
         plugin_env *env = (plugin_env *)n->args;
         int32_t bufsize = n->e->framesPerBuffer;
-        if(inputBuffers[0][0].i==-1){
-                if(env->currentStage == stageHalt){
-                        outputBuffer[bufsize].i=-1;
-                        return;
-                }
-                outputBuffer[bufsize].i=-1;
-                return;//TODO DUMMY
-        }
         for(int32_t i=0;i<bufsize;i++){
-                if((env->currentStage==stageHalt||env->currentStage==stageRelease)&&inputBuffers[0][i].i==0){
+                if((env->currentStage==stageHalt||env->currentStage==stageRelease)&&ksiNodeGetInput(n,inputBuffers,0,i).i==0){
                         env->currentTime = 1;
                         env->currentStage = stageAttack;
-                        env->stageDuration = round(inputBuffers[1][i].f*n->e->framesPerSecond);
+                        printf("attack\n");
+                        env->stageDuration = round(ksiNodeGetInput(n,inputBuffers,1,i).f*n->e->framesPerSecond);
                         env->currentStageStartMod = env->currentMod;
                         env->currentBias = (M_E-env->currentStageStartMod)/(M_E-1);
                 }
-                else if((env->currentStage!=stageHalt||env->currentStage!=stageRelease)&&inputBuffers[0][i].i==1){
+                else if((env->currentStage!=stageHalt&&env->currentStage!=stageRelease)&&ksiNodeGetInput(n,inputBuffers,0,i).i==1){
                         env->currentTime = 1;
                         env->currentStage = stageRelease;
-                        env->stageDuration = round(inputBuffers[4][i].f*n->e->framesPerSecond);
+                        printf("release\n");
+                        env->stageDuration = round(ksiNodeGetInput(n,inputBuffers,4,i).f*n->e->framesPerSecond);
                         env->currentStageStartMod = env->currentMod;
                         env->currentBias = env->currentStageStartMod/(M_E*M_E*M_E-1);
                 }
@@ -62,8 +58,9 @@ void kscarletADSR(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         env->currentMod = env->currentBias-(env->currentBias-env->currentStageStartMod)*expf(-env->currentTime/(float)env->stageDuration);
                         if(!(env->currentTime<env->stageDuration)){
                                 env->currentStage = stageDecay;
-                                env->currentStageStartMod=inputBuffers[3][i].f;
-                                env->stageDuration=round(inputBuffers[2][i].f*n->e->framesPerSecond);
+                                printf("decay\n");
+                                env->currentStageStartMod=ksiNodeGetInput(n,inputBuffers,3,i).f;
+                                env->stageDuration=round(ksiNodeGetInput(n,inputBuffers,2,i).f*n->e->framesPerSecond);
                                 env->currentBias = (M_E*M_E*M_E*env->currentStageStartMod-1)/(M_E*M_E*M_E-1);
                                 env->currentTime = 0;
                         }
@@ -72,12 +69,14 @@ void kscarletADSR(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         env->currentMod = env->currentStageStartMod + (1.0f-env->currentStageStartMod)*expf(-env->currentTime/(float)env->stageDuration*3);
                         if(!(env->currentTime<env->stageDuration)){
                                 env->currentStage=stageSustain;
+                                printf("sustain\n");
                         }
                         break;
                 case stageRelease:
                         env->currentMod = (env->currentStageStartMod+env->currentBias)*expf(-env->currentTime/(float)env->stageDuration*3);
                         if(!(env->currentTime<env->stageDuration)){
                                 env->currentStage=stageHalt;
+                                printf("halt\n");
                         }
                         break;
                 }
@@ -90,4 +89,6 @@ void kscarletADSR(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         outputBuffer[i+bufsize].i=1;
                 }
         }
+        ksiNodePortIOSetDirty(n->outputTypes[0]);
+        ksiNodePortIOSetDirty(n->outputTypes[1]);
 }

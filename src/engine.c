@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include "util.h"
 #include "linear_builtins.h"
+#include "data.h"
 #define QUEUE_EMPTY ((void *)-1ll)
 int ksiEngineAudioCallback( const void *input,
                                    void *output,
@@ -56,77 +57,43 @@ static void* ksiEngineAudioWorker(void *args){
         while(1){
                 if(n==QUEUE_EMPTY)
                         break;
-                switch(n->type&ksiNodeTypeInputMask){
-                case ksiNodeTypeInputFixed:
-                        ksiNodeFuncWrapper(n,n->env.fixed.predecessorBuffers,n->outputBuffer);
-                        break;
-                case ksiNodeTypeInputMixer:{
-                        KsiMixerEnvEntry *me = n->env.mixer.predecessors;
-                        memset(n->env.mixer.internalBuffer, 0, sizeof(KsiData)*bufsize*n->inputCount);
-                        int bypass = 0;
+                for(int32_t i=0;i<n->inputCount;i++){
+                        n->inputCache[i].i = 0;
+                        int dirty = 0;
+                        int8_t type = n->inputTypes[i];
+                        KsiMixerEnvEntry *me = n->env.portEnv[i].mixer;
+                        KsiData *buf = n->env.portEnv[i].buffer;
                         while(me){
                                 KsiNode *prec = me->src;
-                                if(prec){ //src == NULL for bias
-                                        switch(n->inputTypes[me->inputPort]){
-                                        case ksiNodePortTypeGate:
-                                                if(prec->outputBuffer[me->srcPort*bufsize].i==-1){
-                                                        bypass = 1;
-                                                        break;
-                                                }
-                                                for(int i=0;i<bufsize;i++){
-                                                        n->env.mixer.internalBuffer[me->inputPort*bufsize+i].i|=prec->outputBuffer[me->srcPort*bufsize+i].i&me->gain.i;
-                                                }
-                                                break;
-                                        case ksiNodePortTypeFloat:
-                                                for(int i=0;i<bufsize;i++){
-                                                        if(n->gatingOutput<0||n->outputBuffer[n->gatingOutput*bufsize].i!=-1)
-                                                                n->env.mixer.internalBuffer[me->inputPort*bufsize+i].f += prec->outputBuffer[me->srcPort*bufsize+i].f*me->gain.f;
-
-                                                }
-                                                break;
-                                        case ksiNodePortTypeInt32:
-                                                for(int i=0;i<bufsize;i++){
-                                                        if(n->gatingOutput<0||n->outputBuffer[n->gatingOutput*bufsize].i!=-1)
-                                                                n->env.mixer.internalBuffer[me->inputPort*bufsize+i].i += prec->outputBuffer[me->srcPort*bufsize+i].i*me->gain.i;
-                                                }
-                                                break;
-                                        }
+                                if(!prec){ //src == NULL for bias
+                                        ksiDataIncrease(n->inputCache+i, me->gain, type);
                                 }
                                 else{
-                                        switch(n->inputTypes[me->inputPort]){
-                                        case ksiNodePortTypeGate:
-                                                for(int i=0;i<bufsize;i++){
-                                                        n->env.mixer.internalBuffer[me->inputPort*bufsize+i].i |= me->gain.i;
-                                                }
-                                                break;
-                                        case ksiNodePortTypeFloat:
-                                                for(int i=0;i<bufsize;i++){
-                                                        n->env.mixer.internalBuffer[me->inputPort*bufsize+i].f += me->gain.f;
-                                                }
-                                                break;
-                                        case ksiNodePortTypeInt32:
-                                                for(int i=0;i<bufsize;i++){
-                                                        n->env.mixer.internalBuffer[me->inputPort*bufsize+i].i += me->gain.i;
-                                                }
-                                                break;
+                                        if(prec->outputTypes[me->srcPort]&ksiNodePortIODirty){
+                                                dirty=ksiNodePortIODirty;
+                                        }
+                                        else{
+                                                ksiDataWeightedIncrease(n->inputCache+i, prec->outputCache[me->srcPort], me->gain, type);
                                         }
                                 }
                                 me = me->next;
                         }
-                        if(bypass){
-                                if(!(n->gatingOutput<0)){
-                                        n->outputBuffer[n->gatingOutput*bufsize].i=-1;
+                        if(dirty){
+                                me = n->env.portEnv[i].mixer;
+                                for(int32_t j=0;j<bufsize;j++){
+                                        buf[j] = n->inputCache[i];
                                 }
-                                else{
-                                        memset(n->outputBuffer, 0, n->outputCount*bufsize*sizeof(KsiData));
+                                while(me){
+                                        KsiNode *prec = me->src;
+                                        if(prec&&(prec->outputTypes[me->srcPort]&ksiNodePortIODirty)){
+                                                ksiDataBufferWeightedIncrease(buf, prec->outputBuffer+bufsize*i, me->gain, bufsize, type);
+                                        }
+                                        me = me->next;
                                 }
                         }
-                        else{
-                        	ksiNodeFuncWrapper(n,n->env.mixer.internalBufferPtr,n->outputBuffer);
-                        }
-                        break;
+                        n->inputTypes[i]=(n->inputTypes[i]&~ksiNodePortIOMask)|dirty;
                 }
-                }
+                ksiNodeFuncWrapper(n,n->env.mixer.internalBufferPtr,n->outputBuffer);
                 switch(n->type&ksiNodeTypeOutputMask){
                 case ksiNodeTypeOutputNormal:{
                         KsiVecIdlistNode *sn = n->successors;

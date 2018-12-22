@@ -8,9 +8,8 @@ KsiEngine *ksiEngineDestroyChild(KsiEngine *e);
 int32_t ksiEngineAddNode(KsiEngine *e,KsiNode *n);
 
 
-KsiError ksiEngineMakeAdjustableWire(KsiEngine *e,int32_t srcId,int32_t srcPort,int32_t desId,int32_t desPort,KsiData gain);
-KsiError ksiEngineMakeAdjustableBias(KsiEngine *e,int32_t desId,int32_t desPort,KsiData bias);
-KsiError ksiEngineMakeDirectWire(KsiEngine *e,int32_t srcId,int32_t srcPort,int32_t desId,int32_t desPort);
+KsiError ksiEngineMakeWire(KsiEngine *e,int32_t srcId,int32_t srcPort,int32_t desId,int32_t desPort,KsiData gain);
+KsiError ksiEngineMakeBias(KsiEngine *e,int32_t desId,int32_t desPort,KsiData bias);
 KsiError ksiEngineDetachNodes(KsiEngine *e,int32_t srcId,int32_t desId);
 KsiError ksiEngineGetInputType(KsiEngine *e,int32_t id,int32_t port,int8_t *t);
 KsiError ksiEngineGetParamentType(KsiEngine *e,int32_t id,int32_t pid,int8_t *t);

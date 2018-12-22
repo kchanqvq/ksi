@@ -9,16 +9,14 @@
 #define DYNAMIC_MEMORY 1
 #define NO_DYNAMIC_MEMORY 0
 
-#define DYNAMIC_TYPE_META 1
-#define STATIC_TYPE_META 0
-//Each item: _(__,id,symbol name,(require reset?,require dynamic memory?,gating port,dynamic type meta data?),(list of input),(list of output),(list of paraments))
+//Each item: _(__,id,symbol name,(require reset?,require dynamic memory?),(list of input),(list of output))
 #define INLINE_LIST(_,__,nil)                                           \
-        _(__,1,ksiBuiltinNodeFunc2toStereo,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY,-1,STATIC_TYPE_META),((Float)(Float)(nil)),((Float)(Float)(nil)),((nil))) \
-                _(__,2,ksiBuiltinNodeFuncTestOsc,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY,-1,STATIC_TYPE_META),((Float)(nil)),((Float)(nil)),((nil))) \
-                _(__,3,kscarletMidiSeg,(REQUIRE_RESET,DYNAMIC_MEMORY,1,STATIC_TYPE_META),((nil)),((Float)(Gate)(nil)),((Int32)(nil))) \
-                _(__,4,kscarletWavetable,(NOT_REQUIRE_RESET,DYNAMIC_MEMORY,-1,STATIC_TYPE_META),((Float)(Gate)(Int32)(Float)(nil)),((Float)(nil)),((nil))) \
-                _(__,5,kscarletADSR,(REQUIRE_RESET,DYNAMIC_MEMORY,1,STATIC_TYPE_META),((Gate)(Float)(Float)(Float)(Float)(nil)),((Float)(Gate)(nil)),((nil))) \
-                _(__,6,ksiBuiltinNodeFuncModulator,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY,-1,STATIC_TYPE_META),((Float)(Float)(nil)),((Float)(nil)),((nil)))
+        _(__,1,ksiBuiltinNodeFunc2toStereo,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY),((Float)(Float)(nil)),((Float)(Float)(nil))) \
+                _(__,2,ksiBuiltinNodeFuncTestOsc,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY),((Float)(nil)),((Float)(nil))) \
+                _(__,3,kscarletMidiSeg,(REQUIRE_RESET,DYNAMIC_MEMORY),((Int32)(nil)),((Float)(Gate)(nil))) \
+                _(__,4,kscarletWavetable,(NOT_REQUIRE_RESET,DYNAMIC_MEMORY),((Float)(Gate)(Int32)(Float)(nil)),((Float)(nil))) \
+                _(__,5,kscarletADSR,(REQUIRE_RESET,DYNAMIC_MEMORY),((Gate)(Float)(Float)(Float)(Float)(nil)),((Float)(Gate)(nil))) \
+                _(__,6,ksiBuiltinNodeFuncModulator,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY),((Float)(Float)(nil)),((Float)(nil)))
 #define INLINE_PROPERTY_MF(__,id,name,prop,...) __ _N()(id,name,_E prop)
 //_(id,symbol name,require reset?,...)
 #define INLINE_PROPERTY(_) _E(INLINE_LIST(INLINE_PROPERTY_MF,_,nil))
@@ -31,15 +29,9 @@
 #define INLINE_OUTPORT_MF(__,id,name,prop,in,out,...) __(id,name,LISTCOUNT out,(LIST2COMMA ( LIST2PORTTYPE out (LIST_END))))
 #define INLINE_OUTPORT(_) INLINE_LIST(INLINE_OUTPORT_MF,_,INLINE_INPORT_END)
 
-#define INLINE_PARA_MF(__,id,name,prop,in,out,para,...) __(id,name,LISTCOUNT para,(LIST2COMMA ( LIST2PORTTYPE para (LIST_END))))
-#define INLINE_PARA(_) INLINE_LIST(INLINE_PARA_MF,_,INLINE_INPORT_END)
-
 #define DEF_INPORT(id,name,n,i) extern int8_t CAT(name,InPorts)[];
 INLINE_INPORT(DEF_INPORT)
 #define DEF_OUTPORT(id,name,n,i) extern int8_t CAT(name,OutPorts)[];
 INLINE_OUTPORT(DEF_OUTPORT)
-#define DEF_PARA(id,name,n,i) extern int8_t CAT(name,Paraments)[];
-INLINE_PARA(DEF_PARA)
-#undef DEF_PARA
 #undef DEF_INPORT
 #undef DEF_OUTPORT

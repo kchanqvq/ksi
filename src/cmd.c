@@ -16,25 +16,14 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
                 char i,o;
                 int32_t type;
                 cmd = "New node";
-                int readcount = sscanf(lptr, "%c%c%"SCNd16, &i,&o,&type);
+                int readcount = sscanf(lptr, "%c%"SCNd16, &o,&type);
 #define CHECK_READ(n)                                   \
                 if(readcount - n){                      \
                         cli_err_str="Invalid argument format."; \
                         goto cli_err;                   \
                 }
-                CHECK_READ(3);
+                CHECK_READ(2);
                 type<<=16;
-                switch(i){
-                case 'f':
-                        type|=ksiNodeTypeInputFixed;
-                        break;
-                case 'm':
-                        type|=ksiNodeTypeInputMixer;
-                        break;
-                default:
-                        cli_err_str="Invalid input type.";
-                        goto cli_err;
-                }
                 switch(o){
                 case 'n':
                         type|=ksiNodeTypeOutputNormal;

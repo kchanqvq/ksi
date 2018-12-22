@@ -1,7 +1,7 @@
 #include "dag.h"
 //output 0: freq
 //output 1: gating
-//parament 0: resource ID
+//input 0: resource ID
 #include "midiseg.h"
 #include <math.h>
 #include "rbtree.h"
@@ -19,9 +19,9 @@ typedef struct{
 
         //Local variables
         int32_t nextEvent;//Global timestamp
-        int32_t currentGating;
-        float currentFreq;
 } plugin_env;
+#define $freq (n->outputCache[0].f)
+#define $gating (n->outputCache[1].i)
 void kscarletMidiSegInit(KsiNode *n){
         n->args=malloc(sizeof(plugin_env));
         plugin_env *env = (plugin_env *)n->args;
@@ -29,11 +29,11 @@ void kscarletMidiSegInit(KsiNode *n){
 }
 void kscarletMidiSegReset(KsiNode *n){
         plugin_env *env = (plugin_env *)n->args;
-        env->root = n->e->timeseqResources.data[n->paraments[0].i];
+        env->root = n->e->timeseqResources.data[n->inputCache[0].i];
         env->offset = 0;
         env->segLength = 44100;
         env->cycleEnd = 44100;
-        env->currentGating = 1;
+        $gating = 1;
 }
 void kscarletMidiSegDestroy(KsiNode *n){
         free(n->args);
@@ -51,8 +51,8 @@ void kscarletMidiSeg(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                 goto bypass;
         for(int32_t i=0;i<bufsize;i++){
                 while(localNextEvent == i){
-                        env->currentGating = (env->current->data.note.velocity == 0);
-                        env->currentFreq = 440.0f*powf(2, ((float)env->current->data.note.tone-69)/12);
+                        $gating = (env->current->data.note.velocity == 0);
+                        $freq = 440.0f*powf(2, ((float)env->current->data.note.tone-69)/12);
                         env->current = ksiRBNodeNext(env->current);
                         if(env->current){
                                 localNextEvent = env->current->key - n->e->timeStamp;
@@ -60,19 +60,14 @@ void kscarletMidiSeg(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         else
                                 localNextEvent = -1;
                 }
-                outputBuffer[i+bufsize].i = env->currentGating;
-                outputBuffer[i].f = env->currentFreq;
+                outputBuffer[i+bufsize].i = $gating;
+                outputBuffer[i].f = $freq;
         }
+        ksiNodePortIOSetDirty(n->outputTypes[0]);
+        ksiNodePortIOSetDirty(n->outputTypes[1]);
         return;
 bypass:
-        if(env->currentGating){
-                outputBuffer[bufsize].i = -1;
-        }
-        else{
-                for(int32_t i=0;i<bufsize;i++){
-                        outputBuffer[i+bufsize].i = 0;
-                        outputBuffer[i].f = env->currentFreq;
-                }
-        }
+        ksiNodePortIOClear(n->outputTypes[0]);
+        ksiNodePortIOClear(n->outputTypes[1]);
         return;
 }
