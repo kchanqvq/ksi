@@ -67,25 +67,11 @@ typedef struct _KsiNode{
         } env;
 } KsiNode;
 static inline KsiData ksiNodeGetInput(KsiNode *n,KsiData **ib,int32_t port,int32_t i){
-        return (n->inputTypes[i]&ksiNodePortIODirty)?ib[port][i]:n->inputCache[i];
+        return (n->inputTypes[port]&ksiNodePortIODirty)?ib[port][i]:n->inputCache[port];
 }
 typedef struct _KsiVecNodelistNode{
         struct _KsiVecNodelistNode *next;
         KsiNode *node;
 } KsiVecNodelistNode;
 ksiVecDeclareList(VecNodelist, KsiNode*, node);
-typedef struct _KsiEngine{
-        int32_t framesPerBuffer;
-        int32_t framesPerSecond;
-        size_t timeStamp;
-        KsiVec nodes;
-        KsiVec timeseqResources;//use RBTree for midi and automation
-        int nprocs;//not included master thread!
-        pthread_t *workers;
-        queue_t tasks;
-        handle_t masterHandle;
-        KsiSem masterSem;
-        void **outputBufferPointer;
-        int playing;
-} KsiEngine;
 #endif

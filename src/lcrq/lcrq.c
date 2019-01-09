@@ -60,7 +60,6 @@ void queue_init(queue_t * q, int nprocs)
 {
   RingQueue *rq = align_malloc(PAGE_SIZE, sizeof(RingQueue));
   init_ring(rq);
-  q->orignialHead = rq;
   q->head = rq;
   q->tail = rq;
   q->nprocs = nprocs;
@@ -238,11 +237,17 @@ void * dequeue(queue_t * q, handle_t * th)
 {
   return (void *) lcrq_get(q, th);
 }
+//By K
 void handle_free(handle_t *h){
+  hzdptr_t *hzd = &h->hzdptr;
+  void **rlist = &hzd->ptrs[hzd->nptrs];
+  for(int i = 0;i < hzd->nretired; i++){
+    free(rlist[i]);
+  }
   free(h->hzdptr.ptrs);
 }
-void queue_free(queue_t * q, handle_t * h){//By K
-  RingQueue *rq = q->orignialHead;
+void queue_free(queue_t * q, handle_t * h){
+  RingQueue *rq = q->head;
   while(rq){
     RingQueue *n = rq->next;
     free(rq);

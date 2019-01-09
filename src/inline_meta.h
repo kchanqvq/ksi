@@ -9,14 +9,17 @@
 #define DYNAMIC_MEMORY 1
 #define NO_DYNAMIC_MEMORY 0
 
-//Each item: _(__,id,symbol name,(require reset?,require dynamic memory?),(list of input),(list of output))
+#define EDIT_CMD 1
+#define NO_EDIT_CMD 0
+
+//Each item: _(__,id,symbol name,(require reset?,require dynamic memory?,have editing commands?),(list of input),(list of output))
 #define INLINE_LIST(_,__,nil)                                           \
-        _(__,1,ksiBuiltinNodeFunc2toStereo,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY),((Float)(Float)(nil)),((Float)(Float)(nil))) \
-                _(__,2,ksiBuiltinNodeFuncTestOsc,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY),((Float)(nil)),((Float)(nil))) \
-                _(__,3,kscarletMidiSeg,(REQUIRE_RESET,DYNAMIC_MEMORY),((Int32)(nil)),((Float)(Gate)(nil))) \
-                _(__,4,kscarletWavetable,(NOT_REQUIRE_RESET,DYNAMIC_MEMORY),((Float)(Gate)(Int32)(Float)(nil)),((Float)(nil))) \
-                _(__,5,kscarletADSR,(REQUIRE_RESET,DYNAMIC_MEMORY),((Gate)(Float)(Float)(Float)(Float)(nil)),((Float)(Gate)(nil))) \
-                _(__,6,ksiBuiltinNodeFuncModulator,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY),((Float)(Float)(nil)),((Float)(nil)))
+        _(__,1,ksiBuiltinNodeFunc2toStereo,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY,NO_EDIT_CMD),((Float)(Float)(nil)),((Float)(Float)(nil))) \
+                _(__,2,ksiBuiltinNodeFuncTestOsc,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY,NO_EDIT_CMD),((Float)(nil)),((Float)(nil))) \
+                _(__,3,kscarletMidiSeg,(REQUIRE_RESET,DYNAMIC_MEMORY,EDIT_CMD),((nil)),((Float)(Gate)(nil))) \
+                _(__,4,kscarletWavetable,(NOT_REQUIRE_RESET,DYNAMIC_MEMORY,NO_EDIT_CMD),((Float)(Gate)(Int32)(Float)(nil)),((Float)(nil))) \
+                _(__,5,kscarletADSR,(REQUIRE_RESET,DYNAMIC_MEMORY,NO_EDIT_CMD),((Gate)(Float)(Float)(Float)(Float)(nil)),((Float)(Gate)(nil))) \
+                _(__,6,ksiBuiltinNodeFuncModulator,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY,NO_EDIT_CMD),((Float)(Float)(nil)),((Float)(nil)))
 #define INLINE_PROPERTY_MF(__,id,name,prop,...) __ _N()(id,name,_E prop)
 //_(id,symbol name,require reset?,...)
 #define INLINE_PROPERTY(_) _E(INLINE_LIST(INLINE_PROPERTY_MF,_,nil))

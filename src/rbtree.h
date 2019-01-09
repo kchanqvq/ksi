@@ -79,7 +79,6 @@
 
 #ifndef	_LINUX_RBTREE_H
 #define	_LINUX_RBTREE_H
-#define NULL ((void *)0)
 #include <inttypes.h>
 #include "dag.h"
 typedef struct rb_node

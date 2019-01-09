@@ -43,17 +43,17 @@ static inline void ksiDataBufferWeightedIncrease(KsiData *des,KsiData *src,KsiDa
         switch(type&ksiNodePortTypeMask){
         case ksiNodePortTypeFloat:
                 for(int32_t i=0;i<size;i++){
-                        src[i].f += des[i].f*coeff.f;
+                        des[i].f += src[i].f*coeff.f;
                 }
                 break;
         case ksiNodePortTypeInt32:
                 for(int32_t i=0;i<size;i++){
-                        src[i].i += des[i].i*coeff.i;
+                        des[i].i += src[i].i*coeff.i;
                 }
                 break;
         case ksiNodePortTypeGate:
                 for(int32_t i=0;i<size;i++){
-                        src[i].i |= des[i].i|coeff.i;
+                        des[i].i |= src[i].i|coeff.i;
                 }
                 break;
         }

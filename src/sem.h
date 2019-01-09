@@ -28,6 +28,7 @@ static inline int ksiSemWait(KsiSem *s){
 #include <mach/task.h>
 #include <mach/mach_traps.h>
 typedef semaphore_t KsiSem;
+extern mach_port_t mach_task_self();
 static inline int ksiSemInit(KsiSem *s, int flags, unsigned n){
         return (int)semaphore_create(mach_task_self(), s, SYNC_POLICY_FIFO, n);
 }
@@ -40,20 +41,34 @@ static inline int ksiSemPost(KsiSem *s){
 static inline int ksiSemWait(KsiSem *s){
         return (int)semaphore_wait(*s);
 }
+typedef semaphore_t KsiBSem;
+static inline int ksiBSemInit(KsiBSem *s, int flags, unsigned nprocs){
+        return (int)semaphore_create(mach_task_self(), s, SYNC_POLICY_FIFO, 0);
+}
+static inline int ksiBSemDestroy(KsiBSem *s){
+        return (int)semaphore_destroy(mach_task_self(), *s);
+}
+static inline int ksiBSemPost(KsiBSem *s){
+        return (int)semaphore_signal_all(*s);
+}
+static inline int ksiBSemWait(KsiBSem *s){
+        return (int)semaphore_wait(*s);
+}
+
 #else
 #include <pthread.h>
-typedef sem_t KsiSem;
-static inline int ksiSemInit(KsiSem *s, int flags, unsigned n){
-        return sem_init(s,flags,n);
+typedef pthread_barrier_t KsiBSem;
+static inline int ksiBSemInit(KsiBSem *s, int flags, unsigned nprocs){
+        return pthread_barrier_init(s,NULL,nprocs);
 }
-static inline int ksiSemDestroy(KsiSem *s){
-        return sem_destroy(n);
+static inline int ksiBSemDestroy(KsiBSem *s){
+        return pthread_barrier_destroy(s);
 }
-static inline int ksiSemPost(KsiSem *s){
-        return sem_post(n);
+static inline int ksiBSemPost(KsiBSem *s){
+        return pthread_barrier_wait(s);
 }
-static inline int ksiSemWait(KsiSem *s){
-        return sem_wait(n);
+static inline int ksiBSemWait(KsiBSem *s){
+        return pthread_barrier_wait(s);
 }
 #endif
 #endif

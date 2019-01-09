@@ -1,7 +1,6 @@
-#include "dag.h"
 //output 0: freq
 //output 1: gating
-//input 0: resource ID
+//No inputs. Resources are passed by editing command.
 #include "midiseg.h"
 #include <math.h>
 #include "rbtree.h"
@@ -22,18 +21,44 @@ typedef struct{
 } plugin_env;
 #define $freq (n->outputCache[0].f)
 #define $gating (n->outputCache[1].i)
+KsiError kscarletMidiSegEditCmd(KsiNode *n,const char *args,const char **pcli_err_str){
+        plugin_env *env = (plugin_env *)n->args;
+        switch(args[0]){
+        case 'm':{
+                args ++;
+                int mid;
+                int readcount = sscanf(args,"%d",&mid);
+                if(readcount!=1)
+                        goto syn_err;
+                CHECK_VEC(mid, n->e->timeseqResources, ksiErrorTimeSeqIdNotFound);
+                env->root = n->e->timeseqResources.data[mid];
+                break;
+        }
+        case 'p':
+                break;
+        case 'P':
+                break;
+        default:
+                goto syn_err;
+        }
+        return ksiErrorNone;
+syn_err:
+        *pcli_err_str = "Invalid argument.\n"
+                "Usage:em[Notes Time Sequence ID]\n"
+                "      ep[Playlist Time Sequence ID]\n"
+                "      eP[Poly count]";
+        return ksiErrorSyntax;
+}
 void kscarletMidiSegInit(KsiNode *n){
         n->args=malloc(sizeof(plugin_env));
         plugin_env *env = (plugin_env *)n->args;
+        env->root=NULL;
         env->current=NULL;
 }
 void kscarletMidiSegReset(KsiNode *n){
         plugin_env *env = (plugin_env *)n->args;
-        env->root = n->e->timeseqResources.data[n->inputCache[0].i];
-        env->offset = 0;
-        env->segLength = 44100;
-        env->cycleEnd = 44100;
         $gating = 1;
+        env->current = NULL;
 }
 void kscarletMidiSegDestroy(KsiNode *n){
         free(n->args);

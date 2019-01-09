@@ -10,7 +10,7 @@ set(PortAudio_DIR .)
 find_package(PortAudio REQUIRED)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --std=c11 -pthread -fsanitize=address")
 
-include_directories(src)
+include_directories(src ${PORTAUDIO_INCLUDE_DIRS})
 set(builtins_lib)
 add_subdirectory(builtins)
 

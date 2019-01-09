@@ -123,4 +123,8 @@ static inline void ksiVecDelete(KsiVec *v,int32_t id){
         //
 
 #define ksiVecEndIterate() }//
+
+#define CHECK_VEC(id,vec,err) if((id)>=(vec).size||!(vec).data[(id)]) \
+                return (err)
+
 #endif

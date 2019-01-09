@@ -58,18 +58,6 @@ void hzdptr_init(hzdptr_t * hzd, int nprocs, int nptrs)
   hzd->nretired = 0;
   hzd->ptrs = calloc(hzdptr_size(nprocs, nptrs), 1);
 
-  _hzdptr_enlist(hzd);
-}
-
-void _hzdptr_retire(hzdptr_t * hzd, void ** rlist)
-{
-  size_t size = HZDPTR_HTBL_SIZE(hzd->nprocs, hzd->nptrs);
-  void * plist[size];
-  memset(plist, 0, sizeof(plist));
-
-  hzdptr_t * me = hzd;
-  void * ptr;
-
   while ((hzd = hzd->next) != me) {
     int i;
     for (i = 0; i < hzd->nptrs; ++i) {

@@ -2,7 +2,7 @@
 #include <unistd.h>
 #include "engine.h"
 #include "dagedit.h"
-#define KSI_USE_LINENOISE
+//#define KSI_USE_LINENOISE
 #ifdef KSI_USE_LINENOISE
 #include "linenoise/linenoise.h"
 #else

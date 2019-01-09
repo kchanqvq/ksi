@@ -1,4 +1,3 @@
-#include "dag.h"
 //input 0: freq (f)
 //input 1: gate (g)
 //input 2: waveform type (i32)
@@ -22,7 +21,7 @@ void kscarletWavetableDestroy(KsiNode *n){
 #define $freq (n->inputCache[0].f)
 #define $gate (n->inputCache[1].i)
 #define $wf (n->inputCache[2].i)
-#define $mod (n->inputCache[3].i)
+#define $mod (n->inputCache[3].f)
 void kscarletWavetable(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
         plugin_env *env = (plugin_env *)n->args;
         if($gate&&!(n->inputTypes[1]&ksiNodePortIODirty)){
@@ -43,7 +42,7 @@ void kscarletWavetable(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         count++;
                 }
                 env->currentPos = remainderf(env->currentPos, 1.0f);
-                float mod = inputBuffers[3][i].f;
+                float mod = $mod;
                 if(env->currentPos<0.0f)
                         env->currentPos+=1.0f;
                 switch($wf){

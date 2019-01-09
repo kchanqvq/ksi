@@ -1,13 +1,14 @@
 #include <errno.h>
+#include <math.h>
 #include "dag.h"
 #include "dagedit.h"
 #include "engine.h"
 #include "cmd.h"
 #include "resource.h"
-int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char **pcli_err_str){
+int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const char **pcli_err_str){
         char *lptr = line;
         KsiError err;
-        char *cli_err_str=NULL;
+        const char *cli_err_str=NULL;
         char *cmd;
         PaError perr;
         switch(lptr[0]){
@@ -16,7 +17,9 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
                 char i,o;
                 int32_t type;
                 cmd = "New node";
-                int readcount = sscanf(lptr, "%c%"SCNd16, &o,&type);
+                int16_t funcId;
+                int readcount = sscanf(lptr, "%c%"SCNd16, &o,&funcId);
+                type = funcId;
 #define CHECK_READ(n)                                   \
                 if(readcount - n){                      \
                         cli_err_str="Invalid argument format."; \
@@ -41,21 +44,10 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
         case 'w':{
                 lptr++;
                 int32_t srcId,srcPort,desId,desPort;
-                int readcount = sscanf(lptr,"%"SCNd32":%"SCNd32">%"SCNd32":%"SCNd32,&srcId,&srcPort,&desId,&desPort);
-                cmd = "Make direct wire";
-                CHECK_READ(4);
-                err = ksiEngineMakeDirectWire(e, srcId, srcPort, desId, desPort);
-                if(err)
-                        goto rt_err;
-        }
-                break;
-        case 'a':{
-                lptr++;
-                int32_t srcId,srcPort,desId,desPort;
                 int consumed;
                 int readcount = sscanf(lptr,"%"SCNd32":%"SCNd32">%"SCNd32":%"SCNd32"x%n",&srcId,&srcPort,&desId,&desPort,&consumed);
                 lptr+=consumed;
-                cmd = "Make adjustable wire";
+                cmd = "Make wire";
                 CHECK_READ(4);
                 int8_t t;
                 err=ksiEngineGetInputType(e, desId, desPort, &t);
@@ -76,7 +68,7 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
                         g.i=gain;\
                 }
                 INPUT_G(g,t);
-                err = ksiEngineMakeAdjustableWire(e, srcId, srcPort, desId, desPort, g);
+                err = ksiEngineMakeWire(e, srcId, srcPort, desId, desPort, g);
                 if(err)
                         goto rt_err;
         }
@@ -105,6 +97,22 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
                 free(ksiNodeDestroy(n));
         }
                 break;
+        case 'S':{
+                lptr++;
+                cmd = "Set an input sample";
+                int32_t id,pid;
+                int consumed;
+                int readcount = sscanf(lptr, "%"SCNd32":%"SCNd32"x%n", &id,&pid,&consumed);
+                CHECK_READ(2);
+                lptr+=consumed;
+                int8_t t;
+                err = ksiEngineGetInputType(e, id, pid, &t);
+                if(err)
+                        goto rt_err;
+                INPUT_G(g, t);
+                ((KsiNode *)(e->nodes.data[id]))->inputCache[pid]=g;
+                break;
+        }
         case 'u':{
                 lptr++;
                 cmd = "Remove wire";
@@ -160,6 +168,7 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
                 int readcount = sscanf(lptr, "%lf", &t);
                 CHECK_READ(1);
                 e->timeStamp = round(t/e->framesPerSecond);
+                ksiEngineReset(e);
                 break;
         }
         case 'b':{
@@ -175,25 +184,7 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
                 if(err)
                         goto rt_err;
                 INPUT_G(g, t);
-                err = ksiEngineMakeAdjustableBias(e, id, port, g);
-                if(err)
-                        goto rt_err;
-                break;
-        }
-        case 'S':{
-                lptr++;
-                cmd = "Set parament";
-                int32_t id,pid;
-                int consumed;
-                int readcount = sscanf(lptr, "%"SCNd32":%"SCNd32"x%n", &id,&pid,&consumed);
-                CHECK_READ(2);
-                lptr+=consumed;
-                int8_t t;
-                err = ksiEngineGetParamentType(e, id, pid, &t);
-                if(err)
-                        goto rt_err;
-                INPUT_G(g, t);
-                err = ksiEngineSetParament(e, id, pid, g);
+                err = ksiEngineMakeBias(e, id, port, g);
                 if(err)
                         goto rt_err;
                 break;
@@ -204,25 +195,51 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
                 ksiEngineSerialize(e, stdout);
                 break;
         }
+        case 'e':{
+                lptr++;
+                cmd = "Edit node";
+                int32_t id;
+                int consumed;
+                int readcount = sscanf(lptr, "%"SCNd32" %n",&id,&consumed);
+                CHECK_READ(1);
+                lptr+=consumed;
+                err = ksiEngineSendEditingCommand(e, id, lptr, pcli_err_str);
+                if(err==ksiErrorSyntax)
+                        goto cli_err;
+                else if(err)
+                        goto rt_err;
+                break;
+        }
+        case ' ':{
+                cmd = "Pause/Resume";
+                if(e->playing == ksiEnginePlaying){
+                        err = ksiEnginePause(e);
+                        if(err)
+                                goto rt_err;
+                }
+                else{
+                        err = ksiEngineResume(e);
+                        if(err)
+                                goto rt_err;
+                }
+                break;
+        }
         case 'h':{
                 fputs("COMMAND LIST\n"
-                      "New node: n[Input type][Output type][Built-in type]\n"
-                      " Input type: f for fixed number of input wire and m for mixer-support input\n"
+                      "New node: n[Output type][Built-in type]\n"
                       " Output type: n for normal and f for final output of the whole engine\n"
                       " Note: Will print the ID for the new node\n"
-                      "Make direct wire:w[Source ID]: [Source port]>[Destination ID]:[Destination port]\n"
-                      " Note: Destination node's input type must be f\n"
-                      "Make adjustable wire: a[Source ID]:[Source port]>[Destination ID]:[Destination port]x[Gain]\n"
+                      "Make wire: w[Source ID]:[Source port]>[Destination ID]:[Destination port]x[Gain]\n"
                       "Make bias: b[Node ID]:[Port]x[Bias]\n"
-                      " Note: Destination node's input type must be m\n"
-                      "       Duplicated wire will be automatically merged with a warning message\n"
                       "Remove node: r[ID]\n"
                       "Remove wire: u[Source ID]:[Source port]>[Destination ID]:[Destination port]\n"
                       "Load time sequence resource file: o[file name]\n"
                       "Unload time sequence resource file: t[resource id]\n"
-                      "Set parament:S[Node ID]:[Parament ID]x[Value]"
+                      "Set an input sample:S[Node ID]:[Port]x[Value]"
+                      "Edit node:e[Node ID] [Node-spercified editing command]"
                       "Start playing: p\n"
                       "Stop playing: s\n"
+                      "Pause/Resume:[Space]\n"
                       "Load command list from file: l[file name]\n"
                       "Set time: .[Time in frames] or -[Time in seconds]\n"
                       "Dump DAG: >\n"
@@ -299,10 +316,12 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,char 
 cli_err:
         fputs("Illegal command. Type h for help.\n", stderr);
         fputs(cmd,stderr);
-        fputs(": ",stderr);
-        fputs(cli_err_str,stderr);
+        if(cli_err_str){
+                fputs(": ",stderr);
+                fputs(cli_err_str,stderr);
+                *pcli_err_str = cli_err_str;
+        }
         fputc('\n',stderr);
-        *pcli_err_str = cli_err_str;
         *ptrerr = ksiErrorSyntax;
         return 0;
 rt_err:
@@ -323,7 +342,7 @@ quit:
         return 1;
 }
 #define BUFFER_SIZE 64
-int consume_file(KsiEngine *e,PaStream *stream,FILE *fp,KsiError *perr,char **pcli_err_str){
+int consume_file(KsiEngine *e,PaStream *stream,FILE *fp,KsiError *perr,const char **pcli_err_str){
         char *line = NULL;
         size_t cap = 0;
         ssize_t len;
