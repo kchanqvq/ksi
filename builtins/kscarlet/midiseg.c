@@ -8,7 +8,7 @@
 #include <stdio.h>
 typedef struct{
         //Data
-        KsiRBNode *root;
+        KsiRBTree *tree;
         KsiRBNode *current;
 
         //Region position info
@@ -31,7 +31,7 @@ KsiError kscarletMidiSegEditCmd(KsiNode *n,const char *args,const char **pcli_er
                 if(readcount!=1)
                         goto syn_err;
                 CHECK_VEC(mid, n->e->timeseqResources, ksiErrorTimeSeqIdNotFound);
-                env->root = n->e->timeseqResources.data[mid];
+                env->tree = n->e->timeseqResources.data[mid];
                 break;
         }
         case 'p':
@@ -52,7 +52,7 @@ syn_err:
 void kscarletMidiSegInit(KsiNode *n){
         n->args=malloc(sizeof(plugin_env));
         plugin_env *env = (plugin_env *)n->args;
-        env->root=NULL;
+        env->tree=NULL;
         env->current=NULL;
 }
 void kscarletMidiSegReset(KsiNode *n){
@@ -66,7 +66,7 @@ void kscarletMidiSegDestroy(KsiNode *n){
 void kscarletMidiSeg(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
         plugin_env *env = (plugin_env *)n->args;
         if(!env->current){
-                env->current = ksiRBNodeNextForKey(&env->root, n->e->timeStamp);
+                env->current = ksiRBTreeNextForKey(env->tree, n->e->timeStamp);
         }
         int32_t bufsize = n->e->framesPerBuffer;
         if(!env->current)
@@ -78,7 +78,7 @@ void kscarletMidiSeg(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                 while(localNextEvent == i){
                         $gating = (env->current->data.note.velocity == 0);
                         $freq = 440.0f*powf(2, ((float)env->current->data.note.tone-69)/12);
-                        env->current = ksiRBNodeNext(env->current);
+                        env->current = ksiRBTreeNext(env->tree,env->current);
                         if(env->current){
                                 localNextEvent = env->current->key - n->e->timeStamp;
                         }

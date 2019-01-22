@@ -36,7 +36,7 @@ int main(){
         int nproc;
 
         PaError perr = Pa_Initialize();
-        char *errtxt;
+        const char *errtxt;
         if( perr != paNoError ) goto pa_error;
 
         PaStream *stream;

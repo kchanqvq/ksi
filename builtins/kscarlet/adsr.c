@@ -35,6 +35,13 @@ void kscarletADSRReset(KsiNode *n){
 void kscarletADSR(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
         plugin_env *env = (plugin_env *)n->args;
         int32_t bufsize = n->e->framesPerBuffer;
+        if(env->currentStage==stageHalt&&(!(n->inputTypes[0]&ksiNodePortIODirty))){
+                n->outputCache[0].f = 0.0;
+                n->outputCache[1].i = 1;
+                ksiNodePortIOClear(n->outputTypes[0]);
+                ksiNodePortIOClear(n->outputTypes[1]);
+                return;
+        }
         for(int32_t i=0;i<bufsize;i++){
                 if((env->currentStage==stageHalt||env->currentStage==stageRelease)&&ksiNodeGetInput(n,inputBuffers,0,i).i==0){
                         env->currentTime = 1;

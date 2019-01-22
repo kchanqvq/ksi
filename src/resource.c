@@ -1,8 +1,8 @@
 #include "resource.h"
 #include <inttypes.h>
 #define CHECK_RC(n) if(rc-n){err=ksiErrorSyntax;goto jerr;}
-KsiError ksiTimeSeqLoadFromTextFile(KsiRBNode **root,FILE *fp,int32_t framesPerSecond){
-        *root=NULL;
+KsiError ksiTimeSeqLoadFromTextFile(KsiRBTree *tree,FILE *fp,int32_t framesPerSecond){
+        ksiRBTreeInit(tree);
         char *line=NULL;
         size_t cap=0;
         ssize_t len;
@@ -25,7 +25,7 @@ KsiError ksiTimeSeqLoadFromTextFile(KsiRBNode **root,FILE *fp,int32_t framesPerS
                 n->key = time;
                 n->data.note.tone = note;
                 n->data.note.velocity = vel;
-                ksiRBNodeAttach(root, n);
+                ksiRBTreeAttach(tree, n);
         }
 jerr:
         if(line)
@@ -33,11 +33,11 @@ jerr:
         return err;
 }
 KsiError ksiTimeSeqLoadToEngineFromTextFilePath(KsiEngine *e,const char * restrict path,int32_t *id){
-        KsiRBNode *n = NULL;
+        KsiRBTree *n = (KsiRBTree *)malloc(sizeof(KsiRBTree));
         FILE *fp = fopen(path, "r");
         if(!fp)
                 return ksiErrorFileSystem;
-        KsiError err = ksiTimeSeqLoadFromTextFile(&n, fp, e->framesPerSecond);
+        KsiError err = ksiTimeSeqLoadFromTextFile(n, fp, e->framesPerSecond);
         if(!err){
                 *id = ksiVecInsert(&e->timeseqResources, n);
         }
@@ -48,8 +48,9 @@ KsiError ksiTimeSeqUnloadFromEngine(KsiEngine *e,int32_t id){
         if(id>=e->timeseqResources.size||!e->timeseqResources.data[id]){
                 return ksiErrorResIdNotFound;
         }
-        KsiRBNode *n = (KsiRBNode *)e->timeseqResources.data[id];
+        KsiRBTree *n = (KsiRBNode *)e->timeseqResources.data[id];
         ksiVecDelete(&e->timeseqResources, id);
-        ksiRBNodeDestroy(n);
+        ksiRBTreeDestroy(n);
+        free(n);
         return ksiErrorNone;
 }

@@ -1,93 +1,26 @@
 /*
-  Red Black Trees
-  (C) 1999  Andrea Arcangeli <andrea@suse.de>
+ * Copyright (C) Igor Sysoev
+ * Copyright (C) Nginx, Inc.
+ * Copyright (C) 2015, Leo Ma <begeekmyfriend@gmail.com>
+ */
 
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 2 of the License, or
-  (at your option) any later version.
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-  You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software
-  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-  linux/include/linux/rbtree.h
-  To use rbtrees you'll have to implement your own insert and search cores.
-  This will avoid us to use callbacks and to drop drammatically performances.
-  I know it's not the cleaner way,  but in C (not in C++) to get
-  performances and genericity...
-  Some example of insert and search follows here. The search is a plain
-  normal search over an ordered tree. The insert instead must be implemented
-  in two steps: First, the code must insert the element in order as a red leaf
-  in the tree, and then the support library function rb_insert_color() must
-  be called. Such function will do the not trivial work to rebalance the
-  rbtree, if necessary.
-  -----------------------------------------------------------------------
-  static inline struct page * rb_search_page_cache(struct inode * inode,
-  unsigned long offset)
-  {
-  struct rb_node * n = inode->i_rb_page_cache.rb_node;
-  struct page * page;
-  while (n)
-  {
-  page = rb_entry(n, struct page, rb_page_cache);
-  if (offset < page->offset)
-  n = n->rb_left;
-  else if (offset > page->offset)
-  n = n->rb_right;
-  else
-  return page;
-  }
-  return NULL;
-  }
-  static inline struct page * __rb_insert_page_cache(struct inode * inode,
-  unsigned long offset,
-  struct rb_node * node)
-  {
-  struct rb_node ** p = &inode->i_rb_page_cache.rb_node;
-  struct rb_node * parent = NULL;
-  struct page * page;
-  while (*p)
-  {
-  parent = *p;
-  page = rb_entry(parent, struct page, rb_page_cache);
-  if (offset < page->offset)
-  p = &(*p)->rb_left;
-  else if (offset > page->offset)
-  p = &(*p)->rb_right;
-  else
-  return page;
-  }
-  rb_link_node(node, parent, p);
-  return NULL;
-  }
-  static inline struct page * rb_insert_page_cache(struct inode * inode,
-  unsigned long offset,
-  struct rb_node * node)
-  {
-  struct page * ret;
-  if ((ret = __rb_insert_page_cache(inode, offset, node)))
-  goto out;
-  rb_insert_color(node, &inode->i_rb_page_cache);
-  out:
-  return ret;
-  }
-  -----------------------------------------------------------------------
-*/
-
-#ifndef	_LINUX_RBTREE_H
-#define	_LINUX_RBTREE_H
+#ifndef _RBTREE_H
+#define _RBTREE_H
 #include <inttypes.h>
-#include "dag.h"
-typedef struct rb_node
-{
-        unsigned long  rb_parent_color;
+#include "data.h"
 #define	RB_RED		0
 #define	RB_BLACK	1
-        struct rb_node *rb_right;
-        struct rb_node *rb_left;
+#define RB_COLORMASK 0x1
+#define rbtree_red(_node)           ((_node)->type &= ~RB_COLORMASK)
+#define rbtree_black(_node)         ((_node)->type |= RB_COLORMASK)
+#define rbtree_is_black(_node)        ((_node)->type & RB_COLORMASK)
+#define rbtree_is_red(_node)      (!rbtree_is_black(_node))
+#define rbtree_copy_color(_n1, _n2) ((_n1)->type = ((_n1)->type&~RB_COLORMASK)|((_n2)->type&RB_COLORMASK))
+typedef struct rbnode
+{
+        struct rbnode *parent;
+        struct rbnode *right;
+        struct rbnode *left;
         int32_t key;
         int32_t type;
         union{
@@ -109,119 +42,15 @@ typedef struct rb_node
         } data;
 
 } __attribute__((aligned(sizeof(long)))) KsiRBNode;
-/* The alignment might seem pointless, but allegedly CRIS needs it */
 
-struct rb_root
-{
-        struct rb_node *rb_node;
-};
+typedef struct rbtree {
+        struct rbnode *root;     /* root node */
+        struct rbnode *sentinel; /* nil node */
+} KsiRBTree;
 
-
-#define rb_parent(r)   ((struct rb_node *)((r)->rb_parent_color & ~3))
-#define rb_color(r)   ((r)->rb_parent_color & 1)
-#define rb_is_red(r)   (!rb_color(r))
-#define rb_is_black(r) rb_color(r)
-#define rb_set_red(r)  do { (r)->rb_parent_color &= ~1; } while (0)
-#define rb_set_black(r)  do { (r)->rb_parent_color |= 1; } while (0)
-
-static inline void rb_set_parent(struct rb_node *rb, struct rb_node *p)
-{
-        rb->rb_parent_color = (rb->rb_parent_color & 3) | (unsigned long)p;
-}
-static inline void rb_set_color(struct rb_node *rb, int color)
-{
-        rb->rb_parent_color = (rb->rb_parent_color & ~1) | color;
-}
-
-#define RB_ROOT	(struct rb_root) { NULL, }
-
-#define RB_EMPTY_ROOT(root)	((root)->rb_node == NULL)
-#define RB_EMPTY_NODE(node)	(rb_parent(node) == node)
-#define RB_CLEAR_NODE(node)	(rb_set_parent(node, node))
-
-static inline void rb_init_node(struct rb_node *rb)
-{
-        rb->rb_parent_color = 0;
-        rb->rb_right = NULL;
-        rb->rb_left = NULL;
-        RB_CLEAR_NODE(rb);
-}
-
-extern void rb_insert_color(struct rb_node *, struct rb_root *);
-extern void rb_erase(struct rb_node *, struct rb_root *);
-
-typedef void (*rb_augment_f)(struct rb_node *node, void *data);
-
-extern void rb_augment_insert(struct rb_node *node,
-                              rb_augment_f func, void *data);
-extern struct rb_node *rb_augment_erase_begin(struct rb_node *node);
-extern void rb_augment_erase_end(struct rb_node *node,
-                                 rb_augment_f func, void *data);
-
-/* Find logical next and previous nodes in a tree */
-extern struct rb_node *rb_next(const struct rb_node *);
-extern struct rb_node *rb_prev(const struct rb_node *);
-extern struct rb_node *rb_first(const struct rb_root *);
-extern struct rb_node *rb_last(const struct rb_root *);
-
-/* Fast replacement of a single node without remove/rebalance/add/rebalance */
-extern void rb_replace_node(struct rb_node *victim, struct rb_node *new,
-                            struct rb_root *root);
-
-static inline void rb_link_node(struct rb_node * node, struct rb_node * parent,
-                                struct rb_node ** rb_link)
-{
-        node->rb_parent_color = (unsigned long )parent;
-        node->rb_left = node->rb_right = NULL;
-
-        *rb_link = node;
-}
-
-static inline void ksiRBNodeAttach(KsiRBNode **root,KsiRBNode* node)
-{
-        KsiRBNode ** p = root;
-        KsiRBNode * parent = NULL;
-        while (*p)
-        {
-                parent = *p;
-                if (node->key < parent->key)
-                        p = &(*p)->rb_left;
-                else
-                        p = &(*p)->rb_right;
-        }
-        rb_link_node(node, parent, p);
-        struct rb_root ar = {*root};
-        rb_insert_color(node, &ar);
-        *root = ar.rb_node;
-}
-static inline KsiRBNode *ksiRBNodeNextForKey(KsiRBNode **root,int32_t key){
-        KsiRBNode * n = *root;
-        KsiRBNode * c = NULL;
-        while (n)
-        {
-                if (key<n->key){
-                        if(!c||n->key<c->key)
-                                c = n;
-                        n = n->rb_left;
-                }
-                else if (key>n->key)
-                        n = n->rb_right;
-                else
-                        return n;
-        }
-        return c;
-}
-static inline KsiRBNode *ksiRBNodeNext(KsiRBNode *n){
-        return rb_next(n);
-}
-static void ksiRBNodeDestroy(KsiRBNode *root){
-        if(root->rb_left){
-                ksiRBNodeDestroy(root->rb_left);
-        }
-        if(root->rb_right){
-                ksiRBNodeDestroy(root->rb_right);
-        }
-        free(root);
-}
-//static inline void ksiRBNodeRemove(KsiRBNode **root);
-#endif
+void ksiRBTreeInit(KsiRBTree *tree);
+void ksiRBTreeAttach(KsiRBTree *tree,KsiRBNode* node);
+KsiRBNode *ksiRBTreeNextForKey(KsiRBTree *tree,int32_t key);
+KsiRBNode *ksiRBTreeNext(KsiRBTree *tree,KsiRBNode *n);
+void ksiRBTreeDestroy(KsiRBTree *t);
+#endif  /* _RBTREE_H */

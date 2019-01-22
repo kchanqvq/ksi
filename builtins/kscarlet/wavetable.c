@@ -37,10 +37,11 @@ void kscarletWavetable(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         continue;
                 }
                 env->currentPos+=$freq/n->e->framesPerSecond;
+                /*
                 static count = 0;
                 if(env->currentPos!=env->currentPos&&!count){
                         count++;
-                }
+                }*/
                 env->currentPos = remainderf(env->currentPos, 1.0f);
                 float mod = $mod;
                 if(env->currentPos<0.0f)

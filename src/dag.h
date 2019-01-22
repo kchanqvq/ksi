@@ -6,7 +6,6 @@
 #include <semaphore.h>
 #include "vec.h"
 #include "sem.h"
-#include "lcrq/queue.h"
 #include <portaudio.h>
 struct _KsiNode;
 typedef union{int32_t i;float f;} KsiData;

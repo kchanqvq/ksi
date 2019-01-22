@@ -24,16 +24,16 @@ void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,
         e->timeStamp = 0;
         ksiVecInit(&e->nodes, ksiEngineNodesDefaultCapacity);
         ksiVecInit(&e->timeseqResources, ksiEngineNodesDefaultCapacity);
-        queue_init(&e->tasks, nprocs+1);//NPROCS + MASTER
-        queue_register(&e->tasks, &e->masterHandle, 0);
+        ksiWorkQueueInit(&e->tasks, nprocs+1);//NPROCS + MASTER
         ksiSemInit(&e->masterSem, 0, 0);
         ksiBSemInit(&e->hanging, 0, nprocs);
         pthread_mutex_init(&e->editMutex,  NULL);
 
         e->playing = 0;
         atomic_flag_test_and_set(&e->notRequireReset);
-        //atomic_init(&e->hangingCount,0);
-        //ksiSemInit(&e->hangingSem, 0, 0);
+        atomic_init(&e->waitingCount,0);
+        pthread_mutex_init(&e->waitingMutex, NULL);
+        pthread_cond_init(&e->waitingCond, NULL);
         //atomic_init(&e->cleanupCounter,0);
 }
 #define ELOCK() pthread_mutex_lock(&e->editMutex)
@@ -48,14 +48,14 @@ void ksiEngineDestroy(KsiEngine *e){
         pthread_mutex_destroy(&e->editMutex);
 
         ksiVecBeginIterate(&e->timeseqResources, i);
-        KsiRBNode *n = (KsiRBNode *)i;
-        ksiRBNodeDestroy(n);
+        KsiRBTree *n = (KsiRBTree *)i;
+        ksiRBTreeDestroy(n);
+        free(n);
         ksiVecEndIterate();
 
         ksiVecDestroy(&e->timeseqResources);
-        handle_free(&e->masterHandle);
         //while(!atomic_compare_exchange_weak(&e->cleanupCounter, &e->nprocs, 0));
-        queue_free(&e->tasks, &e->masterHandle);
+        ksiWorkQueueDestroy(&e->tasks);
         ksiSemDestroy(&e->masterSem);
         ksiBSemDestroy(&e->hanging);
         free(e->workers);
@@ -333,6 +333,7 @@ KsiNode *ksiNodeDestroy(KsiNode *n){
                 if(n->env.portEnv[i].buffer)
                         free(n->env.portEnv[i].buffer);
         }
+        free(n->env.portEnv);
         free(n->env.internalBufferPtr);
         switch(ksiNodeTypeInlineId(n->type)){
 #define INLINE_CASE(id,name,reqrs,dm,...)     \

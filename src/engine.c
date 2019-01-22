@@ -6,20 +6,22 @@
 #include <unistd.h>
 #include <time.h>
 #define QUEUE_EMPTY ((void *)-1ll)
-#define TRIALS_BEFORE_HANGING 64
-const struct timespec sleepTime = {0,1000000};
+#define TRIALS_BEFORE_HANGING 16
+#define SLEEP_NSEC_BASE 10000UL
+#define SLEEP_NSEC_MAX_FAIL 7
+//#define SLEEP_ENABLED
 KsiError _ksiEngineReset(KsiEngine *e);
-static inline void enqueue_signaled(KsiEngine *e,queue_t *q,handle_t *th,void *v){
-        enqueue(q, th, v);
-        /*
-        int c = atomic_fetch_sub(&e->hangingCount, 1);
-        if(c>0){
-                ksiSemPost(&e->hangingSem);
-                printf("post from %d\n", c);
+static inline void enqueue_signaled(KsiEngine *e,KsiWorkQueue *q,int tid,void *v){
+        ksiWorkQueueCommit(q, tid, v);
+        //printf("enqueued\n", c);
+#ifdef SLEEP_ENABLED
+        if(atomic_load(&e->waitingCount)){
+                pthread_mutex_lock(&e->waitingMutex);
+                //printf("post\n");
+                pthread_cond_signal(&e->waitingCond);
+                pthread_mutex_unlock(&e->waitingMutex);
         }
-        else{
-                atomic_fetch_add(&e->hangingCount, 1);
-                }*/
+#endif
 }
 int ksiEngineAudioCallback( const void *input,
                                    void *output,
@@ -44,7 +46,7 @@ int ksiEngineAudioCallback( const void *input,
         KsiNode *n = (KsiNode *)i;
         *e->outputBufferPointer = output;
         if(!n->depNum)
-                enqueue_signaled(e,&e->tasks, &e->masterHandle, n);
+                enqueue_signaled(e,&e->tasks, 0, n);
         ksiVecEndIterate();
         ksiSemWait(&e->masterSem);
         e->timeStamp+=frameCount;
@@ -52,21 +54,43 @@ int ksiEngineAudioCallback( const void *input,
         return 0;
 }
 static _Atomic int thCounter = 1;
-static inline KsiNode *dequeue_blocked(KsiEngine *e,handle_t *ph){
+static inline KsiNode *dequeue_blocked(KsiEngine *e,int tid){
         void *result = QUEUE_EMPTY;
         int trials = 0;
+        int failed = 0;
         while(result == QUEUE_EMPTY){
                 if(e->playing!=ksiEnginePlaying)
                         break;
-                result = dequeue(&e->tasks, ph);
+                result = ksiWorkQueueGet(&e->tasks, tid);
+#ifdef SLEEP_ENABLED
                 trials ++;
                 if(trials > TRIALS_BEFORE_HANGING){
-                        //atomic_fetch_add(&e->hangingCount, 1);
+                        atomic_fetch_add(&e->waitingCount, 1);
                         //printf("waiting\n");
-                        //ksiSemWait(&e->hangingSem);
-                        nanosleep(&sleepTime, NULL);
+                        struct timeval now;
+                        struct timespec wt;
+                        gettimeofday(&now,NULL);
+                        wt.tv_sec = now.tv_sec;
+                        wt.tv_nsec = now.tv_usec*1000UL + (SLEEP_NSEC_BASE << failed);
+                        pthread_mutex_lock(&e->waitingMutex);
+                        //pthread_cond_wait(&e->waitingCond, &e->waitingMutex);
+                        if(pthread_cond_timedwait(&e->waitingCond, &e->waitingMutex, &wt)){
+                                pthread_mutex_unlock(&e->waitingMutex);
+                                if(failed < SLEEP_NSEC_MAX_FAIL){
+                                        failed ++;
+                                }
+                                //printf("%d\n",failed);
+                        }
+                        else {
+                                pthread_mutex_unlock(&e->waitingMutex);
+                                failed = 0;
+                        }
+                        atomic_fetch_sub(&e->waitingCount, 1);
+                        //printf("wake up %d\n",atomic_load(&e->waitingCount));
+                        //nanosleep(&sleepTime, NULL);
                         trials = 0;
                 }
+#endif
         }
         //printf("dequeued\n");
         return (KsiNode *)result;
@@ -87,16 +111,14 @@ static inline void ksiNodeFuncWrapper(KsiNode *n,KsiData **inputBuffers,KsiData 
 }
 static void* ksiEngineAudioWorker(void *args){
         KsiEngine *e = (KsiEngine *)args;
-        handle_t h;
         int tid = atomic_fetch_add(&thCounter, 1);
-        queue_register(&e->tasks, &h, tid);
-        KsiNode *n = dequeue_blocked(e, &h);
+        KsiNode *n = dequeue_blocked(e, tid);
         int32_t bufsize = e->framesPerBuffer;
         while(1){
                 if(n==QUEUE_EMPTY){
                         if(e->playing == ksiEnginePaused){
                                 ksiBSemWait(&e->hanging);
-                                n = dequeue_blocked(e, &h);
+                                n = dequeue_blocked(e, tid);
                                 continue;
                         }
                         else
@@ -168,7 +190,7 @@ static void* ksiEngineAudioWorker(void *args){
                                 if(dep == s->depNum - 1){
                                         atomic_store(&s->depCounter, 0);
                                         if(foundContinuation){
-                                                enqueue_signaled(e,&e->tasks, &h, s);
+                                                enqueue_signaled(e,&e->tasks, tid, s);
                                         }
                                         else{
                                                 foundContinuation = 1;
@@ -178,16 +200,15 @@ static void* ksiEngineAudioWorker(void *args){
                                 sn = sn->next;
                         }
                         if(!foundContinuation)
-                                n = dequeue_blocked(e, &h);
+                                n = dequeue_blocked(e, tid);
                         break;
                 }
                 case ksiNodeTypeOutputFinal:
                         ksiSemPost(&e->masterSem);
-                        n = dequeue_blocked(e, &h);
+                        n = dequeue_blocked(e, tid);
                         break;
                 }
         }
-        handle_free(&h);
         //atomic_fetch_add(&e->cleanupCounter, 1);
         return NULL;
 }
@@ -224,11 +245,16 @@ KsiError ksiEngineLaunch(KsiEngine *e){
 }
 KsiError ksiEngineStop(KsiEngine *e){
         pthread_mutex_lock(&e->editMutex);
-        if(!e->playing)
+        if(!e->playing){
+                pthread_mutex_unlock(&e->editMutex);
                 return ksiErrorAlreadyStopped;
+        }
         if(e->playing==ksiEnginePaused)
                 ksiBSemPost(&e->hanging);
         e->playing = 0;
+        pthread_mutex_lock(&e->waitingMutex);
+        pthread_cond_broadcast(&e->waitingCond);
+        pthread_mutex_unlock(&e->waitingMutex);
         pthread_mutex_unlock(&e->editMutex);
         //ksiSemPost(&e->masterSem);
         for(int i=0;i<e->nprocs;i++){
@@ -238,18 +264,24 @@ KsiError ksiEngineStop(KsiEngine *e){
 }
 KsiError ksiEnginePause(KsiEngine *e){
         pthread_mutex_lock(&e->editMutex);
-        if(e->playing==ksiEngineStopped)
+        if(e->playing==ksiEngineStopped){
+                pthread_mutex_unlock(&e->editMutex);
                 return ksiErrorAlreadyStopped;
+        }
         e->playing = ksiEnginePaused;
         pthread_mutex_unlock(&e->editMutex);
         return ksiErrorNone;
 }
 KsiError ksiEngineResume(KsiEngine *e){
         pthread_mutex_lock(&e->editMutex);
-        if(e->playing==0)
+        if(e->playing==0){
+                pthread_mutex_unlock(&e->editMutex);
                 return ksiErrorAlreadyStopped;
-        if(e->playing==1)
+        }
+        if(e->playing==1){
+                pthread_mutex_unlock(&e->editMutex);
                 return ksiErrorAlreadyPlaying;
+        }
         e->playing = ksiEnginePlaying;
         pthread_mutex_unlock(&e->editMutex);
         ksiBSemPost(&e->hanging);

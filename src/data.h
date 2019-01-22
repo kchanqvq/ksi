@@ -23,6 +23,8 @@ static inline int ksiDataIsUnit(KsiData d,int8_t type){
                 return d.i==1;
         case ksiNodePortTypeGate:
                 return d.i==0;
+        default:
+                return 0;
         }
 }
 static inline void ksiDataWeightedIncrease(KsiData* s,KsiData i,KsiData c,int8_t type){

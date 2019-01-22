@@ -2,6 +2,7 @@
 #define __engine_h__
 #include "dag.h"
 #include "err.h"
+#include "queue.h"
 #include <pthread.h>
 typedef struct _KsiEngine{
         int32_t framesPerBuffer;
@@ -11,10 +12,11 @@ typedef struct _KsiEngine{
         KsiVec timeseqResources;//use RBTree for midi and automation
         int nprocs;//not included master thread!
         pthread_t *workers;
-        queue_t tasks;
-        handle_t masterHandle;
+        KsiWorkQueue tasks;
         KsiSem masterSem;
-        //_Atomic int hangingCount;
+        _Atomic int waitingCount;
+        pthread_mutex_t waitingMutex;
+        pthread_cond_t waitingCond;
         void **outputBufferPointer;
 #define ksiEngineStopped 0
 #define ksiEnginePlaying 1

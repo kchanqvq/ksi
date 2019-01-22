@@ -5,7 +5,11 @@
 #include "engine.h"
 #include "cmd.h"
 #include "resource.h"
+//static counter;
 int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const char **pcli_err_str){
+        //counter++;
+        //printf("Command #%d\n",counter);
+        //fputs(line,stdout);
         char *lptr = line;
         KsiError err;
         const char *cli_err_str=NULL;
