@@ -4,6 +4,7 @@
 #include "err.h"
 #include "queue.h"
 #include <pthread.h>
+#include "rbtree.h"
 typedef struct _KsiEngine{
         int32_t framesPerBuffer;
         int32_t framesPerSecond;
@@ -28,6 +29,9 @@ typedef struct _KsiEngine{
         //_Atomic int cleanupCounter;
         KsiBSem hanging;
 } KsiEngine;
+
+void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,int nprocs);
+void ksiEngineDestroy(KsiEngine *e);
 
 int ksiEngineAudioCallback( const void *input,
                             void *output,

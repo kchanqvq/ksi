@@ -2,8 +2,6 @@
 #define __dagedit_h__
 #include <stdio.h>
 #include "engine.h"
-void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,int nprocs);
-void ksiEngineDestroy(KsiEngine *e);
 KsiEngine *ksiEngineDestroyChild(KsiEngine *e);
 int32_t ksiEngineAddNode(KsiEngine *e,KsiNode *n);
 

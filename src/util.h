@@ -1,5 +1,8 @@
 #ifndef __util_h__
 #define __util_h__
+#include <errno.h>
+#include <stdlib.h>
+#include <stdio.h>
 #define _CAT(x,y) x##y
 #define CAT(x,y) _CAT(x,y)
 #define _E(...) __VA_ARGS__
@@ -34,4 +37,16 @@
 #define BRANCH1(x,y) x
 #define BRANCH0(x,y) y
 #define BRANCH(cond,x,y) CAT(BRANCH,cond)(x,y)
+
+#define PERROR_GUARDED(str,...) if(__VA_ARGS__){perror("FATAL ERROR: "str);abort();}
+static inline void* ksiMalloc(size_t s){
+        void *ret;
+        ret = malloc(s);
+        if(ret)
+                return ret;
+        else{
+                fprintf(stderr,"FATAL ERROR: Out of memory\n");
+                abort();
+        }
+}
 #endif

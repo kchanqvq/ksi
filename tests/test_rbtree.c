@@ -2,30 +2,31 @@
 #include <stdio.h>
 #include <stdlib.h>
 int main(){
-        KsiRBNode *root = NULL;
+        KsiRBTree root;
+        ksiRBTreeInit(&root);
         KsiRBNode *current = (KsiRBNode *)malloc(sizeof(KsiRBNode));
         current->key = 1;
         current->data.note.tone = 64;
-        ksiRBNodeAttach(&root, current);
+        ksiRBTreeAttach(&root, current);
         current = (KsiRBNode *)malloc(sizeof(KsiRBNode));
         current->key = 3;
         current->data.note.tone = 32;
-        ksiRBNodeAttach(&root, current);
-        current = ksiRBNodeNextForKey(&root, 0);
+        ksiRBTreeAttach(&root, current);
+        current = ksiRBTreeNextForKey(&root, 0);
         current = (KsiRBNode *)malloc(sizeof(KsiRBNode));
         current->key = 2;
         current->data.note.tone = 37;
-        ksiRBNodeAttach(&root, current);
-        current = ksiRBNodeNextForKey(&root, 0);
+        ksiRBTreeAttach(&root, current);
+        current = ksiRBTreeNextForKey(&root, 0);
         current = (KsiRBNode *)malloc(sizeof(KsiRBNode));
         current->key = 7;
         current->data.note.tone = 14;
-        ksiRBNodeAttach(&root, current);
-        current = ksiRBNodeNextForKey(&root, 0);
+        ksiRBTreeAttach(&root, current);
+        current = ksiRBTreeNextForKey(&root, 0);
         current = (KsiRBNode *)malloc(sizeof(KsiRBNode));
         current->key = 5;
         current->data.note.tone = 52;
-        ksiRBNodeAttach(&root, current);
-        current = ksiRBNodeNextForKey(&root, 3);
+        ksiRBTreeAttach(&root, current);
+        current = ksiRBTreeNextForKey(&root, 3);
         printf("Got %d\n", current->data.note.tone);
 }

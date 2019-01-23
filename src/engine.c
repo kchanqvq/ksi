@@ -3,6 +3,8 @@
 #include "util.h"
 #include "linear_builtins.h"
 #include "data.h"
+#include "engine.h"
+#define ksiEngineNodesDefaultCapacity 256
 #include <unistd.h>
 #include <time.h>
 #define QUEUE_EMPTY ((void *)-1ll)
@@ -11,6 +13,58 @@
 #define SLEEP_NSEC_MAX_FAIL 7
 //#define SLEEP_ENABLED
 KsiError _ksiEngineReset(KsiEngine *e);
+
+#define ELOCK() pthread_mutex_lock(&e->editMutex)
+#define EUNLOCK() pthread_mutex_unlock(&e->editMutex)
+
+void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,int nprocs){
+        e->framesPerBuffer = framesPerBuffer;
+        e->framesPerSecond = framesPerSecond;
+        e->outputBufferPointer = NULL;
+        e->workers = (pthread_t *)ksiMalloc(sizeof(pthread_t)*nprocs);
+        e->nprocs = nprocs;
+        e->timeStamp = 0;
+        ksiVecInit(&e->nodes, ksiEngineNodesDefaultCapacity);
+        ksiVecInit(&e->timeseqResources, ksiEngineNodesDefaultCapacity);
+        ksiWorkQueueInit(&e->tasks, nprocs+1);//NPROCS + MASTER
+        ksiSemInit(&e->masterSem, 0, 0);
+        ksiBSemInit(&e->hanging, 0, nprocs);
+        PERROR_GUARDED("Init pthread mutex",
+                       pthread_mutex_init(&e->editMutex,  NULL));
+
+        e->playing = 0;
+        atomic_flag_test_and_set(&e->notRequireReset);
+        atomic_init(&e->waitingCount,0);
+        PERROR_GUARDED("Init pthread mutex",
+                       pthread_mutex_init(&e->waitingMutex, NULL));
+        PERROR_GUARDED("Init pthread conditional variable",
+                       pthread_cond_init(&e->waitingCond, NULL));
+        //atomic_init(&e->cleanupCounter,0);
+}
+//Call ksiEngineDestroyChild before calling ksiEngineDestroy
+void ksiEngineDestroy(KsiEngine *e){
+        if(e->playing)
+                ksiEngineStop(e);
+        ksiVecDestroy(&e->nodes);
+        ELOCK();
+        EUNLOCK();//Get it safe. Gruantee unlocked when destroying.
+        PERROR_GUARDED("Detroy pthread mutex",
+                       pthread_mutex_destroy(&e->editMutex));
+
+        ksiVecBeginIterate(&e->timeseqResources, i);
+        KsiRBTree *n = (KsiRBTree *)i;
+        ksiRBTreeDestroy(n);
+        free(n);
+        ksiVecEndIterate();
+
+        ksiVecDestroy(&e->timeseqResources);
+        //while(!atomic_compare_exchange_weak(&e->cleanupCounter, &e->nprocs, 0));
+        ksiWorkQueueDestroy(&e->tasks);
+        ksiSemDestroy(&e->masterSem);
+        ksiBSemDestroy(&e->hanging);
+        free(e->workers);
+}
+
 static inline void enqueue_signaled(KsiEngine *e,KsiWorkQueue *q,int tid,void *v){
         ksiWorkQueueCommit(q, tid, v);
         //printf("enqueued\n", c);
@@ -35,11 +89,11 @@ int ksiEngineAudioCallback( const void *input,
         if(e->playing==ksiEngineStopped){
                 return 0;
         }
-        pthread_mutex_lock(&e->editMutex);
+        ELOCK();
         //while(!atomic_compare_exchange_weak(&e->cleanupCounter, &e->nprocs, 0));
         if(e->playing==ksiEnginePaused){
                 memset(output, 0, sizeof(KsiData)*2*frameCount);
-                pthread_mutex_unlock(&e->editMutex);
+                EUNLOCK();
                 return 0;
         }
         ksiVecBeginIterate(&e->nodes, i);
@@ -50,7 +104,7 @@ int ksiEngineAudioCallback( const void *input,
         ksiVecEndIterate();
         ksiSemWait(&e->masterSem);
         e->timeStamp+=frameCount;
-        pthread_mutex_unlock(&e->editMutex);
+        EUNLOCK();
         return 0;
 }
 static _Atomic int thCounter = 1;
@@ -244,9 +298,9 @@ KsiError ksiEngineLaunch(KsiEngine *e){
         return ksiErrorNone;
 }
 KsiError ksiEngineStop(KsiEngine *e){
-        pthread_mutex_lock(&e->editMutex);
+        ELOCK();
         if(!e->playing){
-                pthread_mutex_unlock(&e->editMutex);
+                EUNLOCK();
                 return ksiErrorAlreadyStopped;
         }
         if(e->playing==ksiEnginePaused)
@@ -255,7 +309,7 @@ KsiError ksiEngineStop(KsiEngine *e){
         pthread_mutex_lock(&e->waitingMutex);
         pthread_cond_broadcast(&e->waitingCond);
         pthread_mutex_unlock(&e->waitingMutex);
-        pthread_mutex_unlock(&e->editMutex);
+        EUNLOCK();
         //ksiSemPost(&e->masterSem);
         for(int i=0;i<e->nprocs;i++){
                 pthread_join(e->workers[i], NULL);
@@ -263,27 +317,27 @@ KsiError ksiEngineStop(KsiEngine *e){
         return ksiErrorNone;
 }
 KsiError ksiEnginePause(KsiEngine *e){
-        pthread_mutex_lock(&e->editMutex);
+        ELOCK();
         if(e->playing==ksiEngineStopped){
-                pthread_mutex_unlock(&e->editMutex);
+                EUNLOCK();
                 return ksiErrorAlreadyStopped;
         }
         e->playing = ksiEnginePaused;
-        pthread_mutex_unlock(&e->editMutex);
+        EUNLOCK();
         return ksiErrorNone;
 }
 KsiError ksiEngineResume(KsiEngine *e){
-        pthread_mutex_lock(&e->editMutex);
+        ELOCK();
         if(e->playing==0){
-                pthread_mutex_unlock(&e->editMutex);
+                EUNLOCK();
                 return ksiErrorAlreadyStopped;
         }
         if(e->playing==1){
-                pthread_mutex_unlock(&e->editMutex);
+                EUNLOCK();
                 return ksiErrorAlreadyPlaying;
         }
         e->playing = ksiEnginePlaying;
-        pthread_mutex_unlock(&e->editMutex);
+        EUNLOCK();
         ksiBSemPost(&e->hanging);
         //ksiSemPost(&e->masterSem);
         return ksiErrorNone;

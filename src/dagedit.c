@@ -15,51 +15,8 @@
                 return err
 #define CHECK_PARA(node,pid,err) if(!(pid<node->paramentCount)) \
                 return err
-void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,int nprocs){
-        e->framesPerBuffer = framesPerBuffer;
-        e->framesPerSecond = framesPerSecond;
-        e->outputBufferPointer = NULL;
-        e->workers = (pthread_t *)malloc(sizeof(pthread_t)*nprocs);
-        e->nprocs = nprocs;
-        e->timeStamp = 0;
-        ksiVecInit(&e->nodes, ksiEngineNodesDefaultCapacity);
-        ksiVecInit(&e->timeseqResources, ksiEngineNodesDefaultCapacity);
-        ksiWorkQueueInit(&e->tasks, nprocs+1);//NPROCS + MASTER
-        ksiSemInit(&e->masterSem, 0, 0);
-        ksiBSemInit(&e->hanging, 0, nprocs);
-        pthread_mutex_init(&e->editMutex,  NULL);
-
-        e->playing = 0;
-        atomic_flag_test_and_set(&e->notRequireReset);
-        atomic_init(&e->waitingCount,0);
-        pthread_mutex_init(&e->waitingMutex, NULL);
-        pthread_cond_init(&e->waitingCond, NULL);
-        //atomic_init(&e->cleanupCounter,0);
-}
 #define ELOCK() pthread_mutex_lock(&e->editMutex)
 #define EUNLOCK() pthread_mutex_unlock(&e->editMutex)
-//Call ksiEngineDestroyChild before calling ksiEngineDestroy
-void ksiEngineDestroy(KsiEngine *e){
-        if(e->playing)
-                ksiEngineStop(e);
-        ksiVecDestroy(&e->nodes);
-        ELOCK();
-        EUNLOCK();//Get it safe. Gruantee unlocked when destroying.
-        pthread_mutex_destroy(&e->editMutex);
-
-        ksiVecBeginIterate(&e->timeseqResources, i);
-        KsiRBTree *n = (KsiRBTree *)i;
-        ksiRBTreeDestroy(n);
-        free(n);
-        ksiVecEndIterate();
-
-        ksiVecDestroy(&e->timeseqResources);
-        //while(!atomic_compare_exchange_weak(&e->cleanupCounter, &e->nprocs, 0));
-        ksiWorkQueueDestroy(&e->tasks);
-        ksiSemDestroy(&e->masterSem);
-        ksiBSemDestroy(&e->hanging);
-        free(e->workers);
-}
 KsiEngine *ksiEngineDestroyChild(KsiEngine *e){
         ksiVecBeginIterate(&e->nodes, i);
         KsiNode *n = (KsiNode *)i;
@@ -89,7 +46,7 @@ static inline void refreshCopying(KsiEngine *e,KsiNode *n,int32_t port){
         }
         else{
                 if(!n->env.portEnv[port].buffer){
-                        n->env.portEnv[port].buffer = (KsiData *)malloc(sizeof(KsiData)*e->framesPerBuffer);
+                        n->env.portEnv[port].buffer = (KsiData *)ksiMalloc(sizeof(KsiData)*e->framesPerBuffer);
                 }
                 n->env.internalBufferPtr[port] = n->env.portEnv[port].buffer;
         }
@@ -118,7 +75,7 @@ KsiError ksiEngineMakeWire(KsiEngine *e,int32_t srcId,int32_t srcPort,int32_t de
                 ksiVecIdlistPush(&src->successors, desId);
                 des->depNum++;
         }
-        KsiMixerEnvEntry *newEntry = (KsiMixerEnvEntry *)malloc(sizeof(KsiMixerEnvEntry));
+        KsiMixerEnvEntry *newEntry = (KsiMixerEnvEntry *)ksiMalloc(sizeof(KsiMixerEnvEntry));
         newEntry->src=src;
         newEntry->srcPort=srcPort;
         newEntry->gain = gain;
@@ -143,7 +100,7 @@ KsiError ksiEngineMakeBias(KsiEngine *e,int32_t desId,int32_t desPort,KsiData bi
                 }
                 me=me->next;
         }
-        KsiMixerEnvEntry *newEntry = (KsiMixerEnvEntry *)malloc(sizeof(KsiMixerEnvEntry));
+        KsiMixerEnvEntry *newEntry = (KsiMixerEnvEntry *)ksiMalloc(sizeof(KsiMixerEnvEntry));
         newEntry->src=NULL;
         newEntry->srcPort=0;
         newEntry->gain = bias;
@@ -285,13 +242,13 @@ KsiNode *ksiNodeInit(KsiNode *n,int32_t typeFlags,KsiEngine *e,void *args){
                 break;
                 INLINE_INIT(DEF_INIT);
         }
-        n->inputCache = (KsiData *)malloc(sizeof(KsiData)*n->inputCount);
-        n->outputCache = (KsiData *)malloc(sizeof(KsiData)*n->outputCount);
+        n->inputCache = (KsiData *)ksiMalloc(sizeof(KsiData)*n->inputCount);
+        n->outputCache = (KsiData *)ksiMalloc(sizeof(KsiData)*n->outputCount);
         memset(n->inputCache, 0, sizeof(KsiData)*n->inputCount);
         memset(n->outputCache, 0, sizeof(KsiData)*n->outputCount);
 #undef DEF_INPORT
-        n->env.portEnv = (KsiPortEnv *)malloc(sizeof(KsiPortEnv)*n->inputCount);
-        n->env.internalBufferPtr = (KsiData **)malloc(sizeof(KsiData *)*n->inputCount);
+        n->env.portEnv = (KsiPortEnv *)ksiMalloc(sizeof(KsiPortEnv)*n->inputCount);
+        n->env.internalBufferPtr = (KsiData **)ksiMalloc(sizeof(KsiData *)*n->inputCount);
         for(int32_t i=0;i<n->inputCount;i++){
                 n->env.portEnv[i].mixer = NULL;
                 n->env.portEnv[i].buffer = NULL;
@@ -299,7 +256,7 @@ KsiNode *ksiNodeInit(KsiNode *n,int32_t typeFlags,KsiEngine *e,void *args){
         }
         switch(typeFlags&ksiNodeTypeOutputMask){
         case ksiNodeTypeOutputNormal:
-                n->outputBuffer = (KsiData *)malloc(sizeof(KsiData)*e->framesPerBuffer*n->outputCount);
+                n->outputBuffer = (KsiData *)ksiMalloc(sizeof(KsiData)*e->framesPerBuffer*n->outputCount);
                 break;
         case ksiNodeTypeOutputFinal:
                 e->outputBufferPointer = (void **)&n->outputBuffer;

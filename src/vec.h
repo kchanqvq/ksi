@@ -11,7 +11,7 @@
 *****************************************/
 #ifndef __vec_h__
 #define __vec_h__
-#include <stdlib.h>
+#include "util.h"
 typedef struct _KsiVecIdlistNode{
         struct _KsiVecIdlistNode *next;
         int32_t loc;
@@ -28,7 +28,7 @@ typedef struct _KsiVec{
 static inline void ksiVecInit(KsiVec *v,int32_t capacity){
         v->size = 0;
         v->capacity = capacity;
-        v->data = malloc(sizeof(void*)*capacity);
+        v->data = ksiMalloc(sizeof(void*)*capacity);
         v->freelist = NULL;
 }
 static inline void ksiVecDestroy(KsiVec *v){
@@ -43,7 +43,7 @@ static inline int32_t ksi##name##Pop(Ksi##name##Node **head){\
         return ret;\
 }\
 static inline void ksi##name##Push(Ksi##name##Node **head,int32_t id){\
-        Ksi##name##Node *f = (Ksi##name##Node *)malloc(sizeof(Ksi##name##Node));\
+        Ksi##name##Node *f = (Ksi##name##Node *)ksiMalloc(sizeof(Ksi##name##Node));\
         f->loc = id;\
         f->next = *head;\
         *head = f;\
