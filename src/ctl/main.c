@@ -48,15 +48,16 @@ int main(){
         if(p-3)
                 goto input_error;
         ksiEngineInit(&e, fb, fs, nproc);
-        perr = Pa_OpenDefaultStream( &stream,
-                                    0,
-                                    2,
-                                    paFloat32,
-                                    fs,
-                                    fb,
-
-                                    ksiEngineAudioCallback,
-                                    &e );
+        PaStreamParameters ip = {Pa_GetDefaultInputDevice(),1,paFloat32|paNonInterleaved,0,NULL};
+        PaStreamParameters op = {Pa_GetDefaultOutputDevice(),2,paFloat32|paNonInterleaved,0,NULL};
+        perr = Pa_OpenStream(&stream,
+                             &ip,
+                             &op,
+                             fs,
+                             fb,
+                             paClipOff,
+                             ksiEngineAudioCallback,
+                             &e);
         if( perr != paNoError ) goto pa_error;
         KsiError err;
 
@@ -67,11 +68,14 @@ int main(){
                         break;
                 }
                 err=ksiErrorNone;
+                ksiEngineCommit(&e); //Make the change visible to audio workers
                 free(line);
         }
         if(err==ksiErrorAudio)
                 goto pa_error_rep;
         fputs("Finalizing KSI Engine.\n",stdout);
+        if(e.playing)
+                ksiEngineStop(&e);
         ksiEngineDestroy(ksiEngineDestroyChild(&e));
         perr = Pa_CloseStream(stream);
         if( perr != paNoError ) goto pa_error;

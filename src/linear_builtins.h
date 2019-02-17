@@ -1,15 +1,58 @@
 #ifndef __linear_builtins__
 #define __linear_builtins__
 #include "engine.h"
+#include "mvcc_utils.h"
+#include <inttypes.h>
 #include <math.h>
 // 2 -> 2
-static inline void ksiBuiltinNodeFunc2toStereo(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
-        for(int32_t i=0;i<n->e->framesPerBuffer;i++){
-                ksiNodeRefreshCache(n, 0, i);
-                ksiNodeRefreshCache(n, 1, i);
-                outputBuffer[i*2].f=n->inputCache[0].f;
-                outputBuffer[i*2+1].f=n->inputCache[1].f;
+static inline void ksiBuiltinNodeFuncId(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
+        switch(n->type&ksiNodeTypeOutputMask){
+        case ksiNodeTypeOutputFinal:
+                for(int32_t i=0;i<n->e->framesPerBuffer;i++){
+                        int32_t j = n->inputCount;
+                        while(j--){
+                                ksiNodeRefreshCache(n, j, i);
+                                ((KsiData** )outputBuffer)[j][i].f=n->inputCache[j].f;
+                        }
+                }
+                break;
+        case ksiNodeTypeOutputNormal:
+                for(int32_t i=0;i<n->e->framesPerBuffer;i++){
+                        int32_t j = n->inputCount;
+                        while(j--){
+                                ksiNodeRefreshCache(n, j, i);
+                                outputBuffer[j*n->e->framesPerBuffer+j].f=n->inputCache[j].f;
+                        }
+                }
+                break;
         }
+}
+static inline KsiError ksiBuiltinNodeFuncIdEditCmd(KsiNode *n,const char *args,const char **pcli_err_str,int flag){
+        int32_t port_count;
+        int ret = sscanf(args, "%"SCNd32, &port_count);
+        if(ret != 1)
+                goto syn_err;
+        if(!(port_count>0)){
+                *pcli_err_str = "Number of ports must be greater than 0.";
+                return ksiErrorPlugin;
+        }
+        if(port_count>n->inputCount){
+                int32_t i = port_count - n->inputCount;
+                int8_t newTypes[i];
+                while(i--)
+                        newTypes[i] = ksiNodePortTypeFloat;
+                impl_ksiNodeChangeInputPortCount(n, port_count, newTypes, flag);
+                impl_ksiNodeChangeOutputPortCount(n, port_count, newTypes, flag);
+        }
+        else{
+                impl_ksiNodeChangeInputPortCount(n, port_count, NULL, flag);
+                impl_ksiNodeChangeOutputPortCount(n, port_count, NULL, flag);
+        }
+        return ksiErrorNone;
+syn_err:
+        *pcli_err_str = "Invalid argument.\n"
+                "Usage:[Number of ports to change to]";
+        return ksiErrorSyntax;
 }
 // 1 -> 1
 static inline void ksiBuiltinNodeFuncTestOsc(KsiNode *n,KsiData **inputBuffers,KsiData *ob){

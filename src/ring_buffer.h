@@ -2,7 +2,8 @@
 #define __ring_buffer_h__
 #include <inttypes.h>
 #include <stdatomic.h>
-#define ALIGN __attribute__((aligned(128)))
+#include "_config.h"
+#define ALIGN __attribute__((aligned(_CONFIG_CACHE_SIZE*2)))
 //#define ALIGN
 #define ksiRingBufferNodeLength (1<<8)
 #define ksiRingBufferFailedVal ((void *)-1)
@@ -23,7 +24,7 @@ typedef struct _KsiRingBufferEBREntry{
         uint64_t epoch;
         int64_t years;
         KsiRingBufferSegment *freelist[3];
-        int64_t pad[12];
+        int64_t pad[(_CONFIG_CACHE_SIZE*2-8*3-sizeof(KsiRingBufferSegment *))/8];
 } KsiRingBufferEBREntry ALIGN;
 typedef struct _KsiRingBuffer{
         KsiRingBufferSegment * head;

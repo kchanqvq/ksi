@@ -1,3 +1,4 @@
+cmake_minimum_required(VERSION 3.13)
 Project(Ksi)
 set(CMAKE_C_FLAGS_RELEASE "-O3")
 set(CMAKE_C_FLAGS_DEBUG "-O0 -g -fno-inline")
@@ -5,12 +6,14 @@ if ("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
  set(CMAKE_C_FLAGS_RELEASE "-Ofast")
 endif()
 
+add_subdirectory(configure)
+
 enable_testing()
 set(PortAudio_DIR .)
 find_package(PortAudio REQUIRED)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --std=c11 -pthread -fsanitize=address")
 
-include_directories(src ${PORTAUDIO_INCLUDE_DIRS})
+include_directories(src ${PORTAUDIO_INCLUDE_DIRS} ${CMAKE_BINARY_DIR})
 set(builtins_lib)
 add_subdirectory(builtins)
 

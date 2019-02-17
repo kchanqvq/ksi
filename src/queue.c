@@ -27,15 +27,11 @@ static inline int fast_rand(unsigned *seed) {
         return (*seed>>16)&0x7FFF;
 }
 void *ksiWorkQueueGet(KsiWorkQueue *wq,int tid){
-        void *ret;
-        ret = ksiRingBufferPop(nth(wq, tid),wq->nprocs,tid);
-        //printf("%lld\n",ret);
-        while(ret == ksiRingBufferFailedVal){
-                //printf("steal\n");
-                wq->seeds[tid].val ++;
-                int sel = fast_rand(&wq->seeds[tid].val);
-                sel = sel%wq->nprocs;
-                ret = ksiRingBufferTake(nth(wq, sel),wq->nprocs,tid);
-        }
-        return ret;
+        return ksiRingBufferPop(nth(wq, tid),wq->nprocs,tid);
+}
+void *ksiWorkQueueTake(KsiWorkQueue *wq,int tid){
+        wq->seeds[tid].val ++;
+        int sel = fast_rand(&wq->seeds[tid].val);
+        sel = sel%wq->nprocs;
+        return ksiRingBufferTake(nth(wq, sel),wq->nprocs,tid);
 }

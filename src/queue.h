@@ -15,4 +15,5 @@ void ksiWorkQueueInit(KsiWorkQueue *wq,int nprocs);
 void ksiWorkQueueDestroy(KsiWorkQueue *wq);
 void ksiWorkQueueCommit(KsiWorkQueue *wq,int tid,void *data);
 void *ksiWorkQueueGet(KsiWorkQueue *wq,int tid);
+void *ksiWorkQueueTake(KsiWorkQueue *wq,int tid);
 #endif

@@ -21,7 +21,7 @@ typedef struct{
 } plugin_env;
 #define $freq (n->outputCache[0].f)
 #define $gating (n->outputCache[1].i)
-KsiError kscarletMidiSegEditCmd(KsiNode *n,const char *args,const char **pcli_err_str){
+KsiError kscarletMidiSegEditCmd(KsiNode *n,const char *args,const char **pcli_err_str,int flag){
         plugin_env *env = (plugin_env *)n->args;
         switch(args[0]){
         case 'm':{
@@ -44,9 +44,9 @@ KsiError kscarletMidiSegEditCmd(KsiNode *n,const char *args,const char **pcli_er
         return ksiErrorNone;
 syn_err:
         *pcli_err_str = "Invalid argument.\n"
-                "Usage:em[Notes Time Sequence ID]\n"
-                "      ep[Playlist Time Sequence ID]\n"
-                "      eP[Poly count]";
+                "Usage:m[Notes Time Sequence ID]\n"
+                "      p[Playlist Time Sequence ID]\n"
+                "      P[Poly count]";
         return ksiErrorSyntax;
 }
 void kscarletMidiSegInit(KsiNode *n){
@@ -66,6 +66,8 @@ void kscarletMidiSegDestroy(KsiNode *n){
 void kscarletMidiSeg(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
         plugin_env *env = (plugin_env *)n->args;
         if(!env->current){
+                if(!env->tree)
+                        goto bypass;
                 env->current = ksiRBTreeNextForKey(env->tree, n->e->timeStamp);
         }
         int32_t bufsize = n->e->framesPerBuffer;

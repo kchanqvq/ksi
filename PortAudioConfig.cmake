@@ -27,13 +27,15 @@ else (PORTAUDIO_LIBRARIES AND PORTAUDIO_INCLUDE_DIRS)
     set(PORTAUDIO_INCLUDE_DIRS
       ${PORTAUDIO2_INCLUDE_DIRS}
     )
-    if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-      set(PORTAUDIO_LIBRARIES "${PORTAUDIO2_LIBRARY_DIRS}/lib${PORTAUDIO2_LIBRARIES}.dylib")
-    else (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-      set(PORTAUDIO_LIBRARIES
-        ${PORTAUDIO2_LIBRARIES}
+    foreach(portaudiolib ${PORTAUDIO2_LIBRARIES})
+      find_library(${portaudiolib}_LIBRARY
+        NAMES ${portaudiolib}
+        PATHS ${PORTAUDIO2_LIBRARY_DIRS}
       )
-    endif (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+      if (NOT "${${portaudiolib}_LIBRARY}" STREQUAL "")
+        list(APPEND PORTAUDIO_LIBRARIES ${${portaudiolib}_LIBRARY})
+      endif()
+    endforeach(portaudiolib)
     set(PORTAUDIO_VERSION
       19
     )
@@ -87,7 +89,6 @@ else (PORTAUDIO_LIBRARIES AND PORTAUDIO_INCLUDE_DIRS)
     if (PORTAUDIO_INCLUDE_DIRS AND PORTAUDIO_LIBRARIES)
        set(PORTAUDIO_FOUND TRUE)
     endif (PORTAUDIO_INCLUDE_DIRS AND PORTAUDIO_LIBRARIES)
-
     if (PORTAUDIO_FOUND)
       if (NOT Portaudio_FIND_QUIETLY)
         message(STATUS "Found Portaudio: ${PORTAUDIO_LIBRARIES}")

@@ -3,19 +3,17 @@
 #include <stdio.h>
 #include "engine.h"
 KsiEngine *ksiEngineDestroyChild(KsiEngine *e);
-int32_t ksiEngineAddNode(KsiEngine *e,KsiNode *n);
-
+KsiError ksiEngineAddNode(KsiEngine *e,int32_t typeFlags,int32_t *idRet,void *extArgs,size_t len);
 
 KsiError ksiEngineMakeWire(KsiEngine *e,int32_t srcId,int32_t srcPort,int32_t desId,int32_t desPort,KsiData gain);
 KsiError ksiEngineMakeBias(KsiEngine *e,int32_t desId,int32_t desPort,KsiData bias);
 KsiError ksiEngineDetachNodes(KsiEngine *e,int32_t srcId,int32_t desId);
 KsiError ksiEngineGetInputType(KsiEngine *e,int32_t id,int32_t port,int8_t *t);
-KsiError ksiEngineRemoveNode(KsiEngine *e,int32_t id,KsiNode **n);
-KsiError ksiEngineSendEditingCommand(KsiEngine *e,int32_t id,const char *args,const char **pcli_err_str);
+KsiError ksiEngineRemoveNode(KsiEngine *e,int32_t id);
+//len should include the '\0' !!!
+KsiError ksiEngineSendEditingCommand(KsiEngine *e,int32_t id,const char *args,const char **pcli_err_str,size_t len);
 KsiError ksiEngineRemoveWire(KsiEngine *e,int32_t srcId,int32_t srcPort,int32_t desId,int32_t desPort);
-
-KsiNode *ksiNodeInit(KsiNode *n,int32_t typeFlags,KsiEngine *e,void *args);
-KsiNode *ksiNodeDestroy(KsiNode *n);
+KsiError ksiEngineCommit(KsiEngine *e);
 
 void ksiNodeSerialize(KsiNode *n,FILE *fp);
 void ksiEngineSerialize(KsiEngine *e,FILE *fp);

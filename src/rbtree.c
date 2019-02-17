@@ -1,5 +1,5 @@
 #include "rbtree.h"
-#define NULL ((void *)0)
+
 static void
 rbtree_node_init(struct rbnode *node)
 {

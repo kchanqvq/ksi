@@ -42,7 +42,11 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                         cli_err_str="Invalid output type.";
                         goto cli_err;
                 }
-                printf("Node created with id: %"PRId32"\n",ksiEngineAddNode(e, ksiNodeInit((KsiNode *)malloc(sizeof(KsiNode)), type, e, NULL)));
+                int32_t id;
+                err = ksiEngineAddNode(e, type, &id, NULL, 0);
+                if(err)
+                        goto rt_err;
+                printf("Node created with id: %"PRId32"\n",id);
         }
                 break;
         case 'w':{
@@ -95,10 +99,9 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                 int readcount = sscanf(lptr,"%"SCNd32,&id);
                 CHECK_READ(1);
                 KsiNode *n;
-                err = ksiEngineRemoveNode(e, id,&n);
+                err = ksiEngineRemoveNode(e, id);
                 if(err)
                         goto rt_err;
-                free(ksiNodeDestroy(n));
         }
                 break;
         case 'S':{
@@ -114,7 +117,8 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                 if(err)
                         goto rt_err;
                 INPUT_G(g, t);
-                ((KsiNode *)(e->nodes.data[id]))->inputCache[pid]=g;
+                ((KsiNode *)(e->nodes[0].data[id]))->inputCache[pid]=g;
+                ((KsiNode *)(e->nodes[1].data[id]))->inputCache[pid]=g;
                 break;
         }
         case 'u':{
@@ -207,7 +211,7 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                 int readcount = sscanf(lptr, "%"SCNd32" %n",&id,&consumed);
                 CHECK_READ(1);
                 lptr+=consumed;
-                err = ksiEngineSendEditingCommand(e, id, lptr, pcli_err_str);
+                err = ksiEngineSendEditingCommand(e, id, lptr, pcli_err_str, strlen(lptr)+1);
                 if(err==ksiErrorSyntax)
                         goto cli_err;
                 else if(err)

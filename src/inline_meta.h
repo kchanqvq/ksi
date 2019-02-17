@@ -14,7 +14,7 @@
 
 //Each item: _(__,id,symbol name,(require reset?,require dynamic memory?,have editing commands?),(list of input),(list of output))
 #define INLINE_LIST(_,__,nil)                                           \
-        _(__,1,ksiBuiltinNodeFunc2toStereo,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY,NO_EDIT_CMD),((Float)(Float)(nil)),((Float)(Float)(nil))) \
+        _(__,1,ksiBuiltinNodeFuncId,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY,EDIT_CMD),((Float)(nil)),((Float)(nil))) \
                 _(__,2,ksiBuiltinNodeFuncTestOsc,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY,NO_EDIT_CMD),((Float)(nil)),((Float)(nil))) \
                 _(__,3,kscarletMidiSeg,(REQUIRE_RESET,DYNAMIC_MEMORY,EDIT_CMD),((nil)),((Float)(Gate)(nil))) \
                 _(__,4,kscarletWavetable,(NOT_REQUIRE_RESET,DYNAMIC_MEMORY,NO_EDIT_CMD),((Float)(Gate)(Int32)(Float)(nil)),((Float)(nil))) \
@@ -33,8 +33,20 @@
 #define INLINE_OUTPORT(_) INLINE_LIST(INLINE_OUTPORT_MF,_,INLINE_INPORT_END)
 
 #define DEF_INPORT(id,name,n,i) extern int8_t CAT(name,InPorts)[];
-INLINE_INPORT(DEF_INPORT)
+INLINE_INPORT(DEF_INPORT);
+#undef DEF_INPORT
 #define DEF_OUTPORT(id,name,n,i) extern int8_t CAT(name,OutPorts)[];
-INLINE_OUTPORT(DEF_OUTPORT)
+INLINE_OUTPORT(DEF_OUTPORT);
+#undef DEF_OUTPORT
+#include "dag.h"
+#include "err.h"
+#define INLINE_CASE(id,name,res,dm,cmd,...)             \
+        CONDITIONAL(res,static void CAT(name,Reset)(KsiNode *n);)   \
+        CONDITIONAL(dm,static void CAT(name,Init)(KsiNode *n);) \
+        CONDITIONAL(dm,static void CAT(name,Destroy)(KsiNode *n);) \
+        CONDITIONAL(cmd,static KsiError CAT(name,EditCmd)(KsiNode *n,const char *args,const char **pcli_err_str,int flag);) \
+        static void name(KsiNode *n, KsiData **inputBuffers, KsiData *outputBuffer);
+INLINE_PROPERTY(INLINE_CASE);
+#undef INLINE_CASE
 #undef DEF_INPORT
 #undef DEF_OUTPORT

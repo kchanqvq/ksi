@@ -12,29 +12,11 @@
 #ifndef __vec_h__
 #define __vec_h__
 #include "util.h"
-typedef struct _KsiVecIdlistNode{
-        struct _KsiVecIdlistNode *next;
-        int32_t loc;
-} KsiVecIdlistNode;
-//@brief A dynamic vector that maintains a unique id for each element.
-typedef struct _KsiVec{
-        int32_t size;
-        int32_t capacity;
-        void **data;
-        KsiVecIdlistNode *freelist;
-} KsiVec;
-//@brief Insert a void* pointer to a KsiVec
-//@return A unique id for the element
-static inline void ksiVecInit(KsiVec *v,int32_t capacity){
-        v->size = 0;
-        v->capacity = capacity;
-        v->data = ksiMalloc(sizeof(void*)*capacity);
-        v->freelist = NULL;
-}
-static inline void ksiVecDestroy(KsiVec *v){
-        free(v->data);
-}
-#define ksiVecDeclareList(name,int32_t,loc)\
+#define ksiVecDeclareList(name,int32_t,loc)        \
+typedef struct _Ksi##name##Node{\
+        struct _Ksi##name##Node *next;\
+        int32_t loc;\
+} Ksi##name##Node;\
 static inline int32_t ksi##name##Pop(Ksi##name##Node **head){\
         Ksi##name##Node *f = *head;\
         int32_t ret = f->loc;\
@@ -55,9 +37,8 @@ static inline int ksi##name##Search(Ksi##name##Node *head,int32_t id){\
                 head=head->next;\
         }\
         return 0;\
-        }//
-ksiVecDeclareList(VecIdlist, int32_t, loc);
-#define ksiVecListDelete(list,predict,break,KsiMixerEnvEntry) do{                   \
+}//
+#define impl_ksiVecListDelete(list,predict,break,KsiMixerEnvEntry,free) do{  \
                 KsiMixerEnvEntry *me = (list);                      \
                 KsiMixerEnvEntry *pre = NULL;                       \
                 while(me){                                          \
@@ -81,6 +62,7 @@ ksiVecDeclareList(VecIdlist, int32_t, loc);
                         }                                           \
                 }                                                   \
         }while(0)
+#define ksiVecListDelete(list,predict,break,KsiMixerEnvEntry) impl_ksiVecListDelete(list,predict,break,KsiMixerEnvEntry,free)
 #define ksiVecListDestroy(list,type)            \
         do{                                     \
                 type *l = (list);               \
@@ -90,6 +72,27 @@ ksiVecDeclareList(VecIdlist, int32_t, loc);
                         l=n;                    \
                 }                               \
         }while(0)
+ksiVecDeclareList(VecIdlist, int32_t, loc);
+
+//@brief A dynamic vector that maintains a unique id for each element.
+typedef struct _KsiVec{
+        int32_t size;
+        int32_t capacity;
+        void **data;
+        KsiVecIdlistNode *freelist;
+} KsiVec;
+//@brief Insert a void* pointer to a KsiVec
+//@return A unique id for the element
+static inline void ksiVecInit(KsiVec *v,int32_t capacity){
+        v->size = 0;
+        v->capacity = capacity;
+        v->data = ksiMalloc(sizeof(void*)*capacity);
+        v->freelist = NULL;
+}
+static inline void ksiVecDestroy(KsiVec *v){
+        free(v->data);
+        ksiVecListDestroy(v->freelist, KsiVecIdlistNode);
+}
 static inline int32_t ksiVecInsert(KsiVec *v,void *item){
         int32_t ret;
         if(v->freelist){
@@ -116,15 +119,17 @@ static inline void ksiVecDelete(KsiVec *v,int32_t id){
                 ksiVecIdlistPush(&v->freelist,id);
         }
 }
-#define ksiVecBeginIterate(v,i) for(int32_t _##i=0;_##i<(v)->size;_##i++){ \
-        void *i=(v)->data[_##i];                                              \
+#define ksiVecBeginIterate(v,i) for(int32_t i##_=0;i##_<(v)->size;i##_++){ \
+        void *i=(v)->data[i##_];                                              \
         if(!i)                                                          \
                 continue;                                               \
         //
 
 #define ksiVecEndIterate() }//
 
-#define CHECK_VEC(id,vec,err) if((id)>=(vec).size||!(vec).data[(id)]) \
-                return (err)
+#define CHECK_VEC(id,vec,err,...) if((id)>=(vec).size||!(vec).data[(id)]){ \
+                __VA_ARGS__;/*hook for cleanup*/                        \
+        return (err);\
+        }
 
 #endif

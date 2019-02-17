@@ -48,7 +48,7 @@ KsiError ksiTimeSeqUnloadFromEngine(KsiEngine *e,int32_t id){
         if(id>=e->timeseqResources.size||!e->timeseqResources.data[id]){
                 return ksiErrorResIdNotFound;
         }
-        KsiRBTree *n = (KsiRBNode *)e->timeseqResources.data[id];
+        KsiRBTree *n = (KsiRBTree *)e->timeseqResources.data[id];
         ksiVecDelete(&e->timeseqResources, id);
         ksiRBTreeDestroy(n);
         free(n);

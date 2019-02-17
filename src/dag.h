@@ -1,4 +1,3 @@
-
 #ifndef __dag_h__
 #define __dag_h__
 #include <inttypes.h>
@@ -24,7 +23,6 @@ struct _KsiEngine;
 typedef struct _KsiNode{
         _Atomic int depCounter;
         int depNum;
-        KsiNodeFunc f;
         struct _KsiEngine *e;
 
         int32_t id;
@@ -56,9 +54,14 @@ typedef struct _KsiNode{
 #define ksiNodeTypeOutputFinal 0x10
 #define ksiNodeTypeScratchMask 0xF00
 #define ksiNodeTypeScratchPredecessor 0x100
+#define ksiNodeTypeDynamicInputType 0x1000
+#define ksiNodeTypeDynamicOutputType 0x2000
 #define ksiNodeTypeInlineNodeFuncMask 0xFFFF0000
 #define ksiNodeTypeInlineId(t) (((t)&ksiNodeTypeInlineNodeFuncMask)>>16)
-        void *args;
+
+        void *args; // For internal audio processing use only!
+        void *extArgs; // Editing command should only access extArg, whose synchronization is managed by KSI
+        // extArgs should be read only for audio threads, otherwise the design will be broken
         int32_t inputCount;
         struct {
                 KsiPortEnv *portEnv;//one portEnv for each input port
@@ -68,9 +71,5 @@ typedef struct _KsiNode{
 static inline KsiData ksiNodeGetInput(KsiNode *n,KsiData **ib,int32_t port,int32_t i){
         return (n->inputTypes[port]&ksiNodePortIODirty)?ib[port][i]:n->inputCache[port];
 }
-typedef struct _KsiVecNodelistNode{
-        struct _KsiVecNodelistNode *next;
-        KsiNode *node;
-} KsiVecNodelistNode;
 ksiVecDeclareList(VecNodelist, KsiNode*, node);
 #endif

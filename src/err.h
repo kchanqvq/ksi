@@ -24,6 +24,8 @@
                 _(ksiErrorSyntax,"Syntax error")\
                 _(ksiErrorResIdNotFound,"No loaded time sequence resource with provided ID")\
                 _(ksiErrorType,"Incompatible input and output type")\
+                _(ksiErrorNoEditCmd,"The plugin does not support editing")\
+                _(ksiErrorNoPlugin,"No plugin with spercified plugin ID")\
                 _(ksiErrorPlugin,"Plugin error")
 #define __err_enum(x,y) x,
 typedef enum{

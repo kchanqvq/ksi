@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.13)
 aux_source_directory(. SRCS)
 add_library(kscarlet ${SRCS})
 set(builtins_lib ${builtins_lib} kscarlet PARENT_SCOPE)
+add_dependencies(kscarlet ksi)

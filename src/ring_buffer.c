@@ -191,6 +191,8 @@ void *ksiRingBufferTake(KsiRingBuffer *rb,int nprocs,int tid){
                                 }
                                 tryFree(ee, rb, nprocs, tid);
                         }
+                        else
+                                return ksiRingBufferFailedVal;
                 }
         }
 #ifdef FREE

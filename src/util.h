@@ -39,14 +39,33 @@
 #define BRANCH(cond,x,y) CAT(BRANCH,cond)(x,y)
 
 #define PERROR_GUARDED(str,...) if(__VA_ARGS__){perror("FATAL ERROR: "str);abort();}
+#define PRINT_OOM() fprintf(stderr,"FATAL ERROR: Out of memory\n")
 static inline void* ksiMalloc(size_t s){
         void *ret;
         ret = malloc(s);
         if(ret)
                 return ret;
         else{
-                fprintf(stderr,"FATAL ERROR: Out of memory\n");
+                PRINT_OOM();
                 abort();
         }
 }
+static inline void* ksiRealloc(void *ptr, size_t s){
+        void *ret;
+        ret = realloc(ptr,s);
+        if(ret)
+                return ret;
+        else{
+                PRINT_OOM();
+                abort();
+        }
+}
+#define MIN(x,y) ((x)<(y)?(x):(y))
+#undef PRINT_OOM
+#ifdef NDEBUG
+#define debug_printf(...)
+#else
+#define debug_printf(...) printf(__VA_ARGS__)
+#define debug_check_node(e,n,epoch) assert(!n||n==e->nodes[epoch].data[n->id])
+#endif
 #endif
