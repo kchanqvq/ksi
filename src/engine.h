@@ -23,10 +23,9 @@ typedef struct _KsiEngine{
            -- From this step on, the work may be done in another thread to avoid blocking the editor thread.
            3) Update epoch to (1+epoch)%2
            4) Wait until epoch == audioEpoch which means the audio thread has migrated to the new version.
-           5) Perform the same editing sequence on nodes[(epoch+1)%2] (it is the old version!). Any allocation here is overriden by the pointers in the allocating buffer to make sure the two version shares the same buffers.
+           5) Perform the same editing sequence on nodes[(epoch+1)%2] (it is the old version!). Any RT data allocation here is overriden by the pointers in the allocating buffer to make sure the two version shares the same buffers.
            6) Now the 2 versions are synchronized again.
-           NOTE: Any plugin/shell/wrapper implementation should keep everything in (void *)args and editing commands (which is NOT gruanteed to work properly by MVCC) so modification of routing is separated from plugin changes.
-           TODO: Properly handling concurrent type information changes. (e.g. changing the number of IO in editing commands)
+
            [When the engine is offline (stopped/paused)]
            Step 5) doesn't wait for any condition.
          */
