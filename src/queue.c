@@ -35,3 +35,8 @@ void *ksiWorkQueueTake(KsiWorkQueue *wq,int tid){
         sel = sel%wq->nprocs;
         return ksiRingBufferTake(nth(wq, sel),wq->nprocs,tid);
 }
+void ksiWorkQueueTryFree(KsiWorkQueue *wq,int tid){
+        for(int i=0;i<wq->nprocs;i++){
+                ksiRingBufferTryFree(nth(wq,i), wq->nprocs, tid);
+        }
+}

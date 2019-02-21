@@ -41,11 +41,11 @@ INLINE_OUTPORT(DEF_OUTPORT);
 #include "dag.h"
 #include "err.h"
 #define INLINE_CASE(id,name,res,dm,cmd,...)             \
-        CONDITIONAL(res,static void CAT(name,Reset)(KsiNode *n);)   \
-        CONDITIONAL(dm,static void CAT(name,Init)(KsiNode *n);) \
-        CONDITIONAL(dm,static void CAT(name,Destroy)(KsiNode *n);) \
-        CONDITIONAL(cmd,static KsiError CAT(name,EditCmd)(KsiNode *n,const char *args,const char **pcli_err_str,int flag);) \
-        static void name(KsiNode *n, KsiData **inputBuffers, KsiData *outputBuffer);
+        CONDITIONAL(res,void CAT(name,Reset)(KsiNode *n);)   \
+        CONDITIONAL(dm,void CAT(name,Init)(KsiNode *n);) \
+        CONDITIONAL(dm,void CAT(name,Destroy)(KsiNode *n);) \
+        CONDITIONAL(cmd,KsiError CAT(name,EditCmd)(KsiNode *n,const char *args,const char **pcli_err_str,int flag);) \
+        void name(KsiNode *n, KsiData **inputBuffers, KsiData *outputBuffer);
 INLINE_PROPERTY(INLINE_CASE);
 #undef INLINE_CASE
 #undef DEF_INPORT

@@ -16,4 +16,5 @@ void ksiWorkQueueDestroy(KsiWorkQueue *wq);
 void ksiWorkQueueCommit(KsiWorkQueue *wq,int tid,void *data);
 void *ksiWorkQueueGet(KsiWorkQueue *wq,int tid);
 void *ksiWorkQueueTake(KsiWorkQueue *wq,int tid);
+void ksiWorkQueueTryFree(KsiWorkQueue *wq,int tid);// For GC
 #endif

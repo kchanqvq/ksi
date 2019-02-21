@@ -41,6 +41,9 @@ static inline int ksiSemPost(KsiSem *s){
 static inline int ksiSemWait(KsiSem *s){
         return (int)semaphore_wait(*s);
 }
+static inline int ksiSemTryWait(KsiSem *s,unsigned int tsec,unsigned int tnsec){
+        return (int)semaphore_timedwait(*s, (mach_timespec_t){tsec,tnsec});
+}
 typedef semaphore_t KsiBSem;
 static inline int ksiBSemInit(KsiBSem *s, int flags, unsigned nprocs){
         return (int)semaphore_create(mach_task_self(), s, SYNC_POLICY_FIFO, 0);

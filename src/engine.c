@@ -13,7 +13,7 @@
 #define TRIALS_BEFORE_HANGING 16
 #define SLEEP_NSEC_BASE 10000UL
 #define SLEEP_NSEC_MAX_FAIL 7
-//#define SLEEP_ENABLED
+#define SLEEP_ENABLED
 KsiError _ksiEngineReset(KsiEngine *e);
 
 void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,int nprocs){
@@ -34,7 +34,7 @@ void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,
         ksiSPSCPtrListInit(&e->mallocBufs);
         ksiSPSCPtrListInit(&e->freeBufs);
 
-        ksiWorkQueueInit(&e->tasks, nprocs+1);//NPROCS + MASTER
+        ksiWorkQueueInit(&e->tasks, nprocs+2);//MASTER, WORKERS, COMMITTER(for GC)
         ksiSemInit(&e->masterSem, 0, 0);
         ksiSemInit(&e->committingSem, 0, 0);
         ksiSemInit(&e->migratedSem, 0, 0);
@@ -46,11 +46,9 @@ void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,
                        pthread_create(&e->committer, NULL, ksiMVCCCommitter, e));
         e->playing = 0;
         atomic_flag_test_and_set(&e->notRequireReset);
-        //atomic_init(&e->waitingCount,0);
-        //PERROR_GUARDED("Init pthread mutex",
-        //               pthread_mutex_init(&e->waitingMutex, NULL));
-        //PERROR_GUARDED("Init pthread conditional variable",
-        //               pthread_cond_init(&e->waitingCond, NULL));
+
+        atomic_init(&e->waitingCount,0);
+        ksiSemInit(&e->waitingSem, 0, 0);
         //atomic_init(&e->cleanupCounter,0);
 }
 static inline KsiError impl_ksiEngineStop(KsiEngine *e,int state){
@@ -62,9 +60,9 @@ static inline KsiError impl_ksiEngineStop(KsiEngine *e,int state){
         if(e->playing==ksiEnginePaused)
                 ksiBSemPost(&e->hanging);
         e->playing = state;
-        //pthread_mutex_lock(&e->waitingMutex);
-        //pthread_cond_broadcast(&e->waitingCond);
-        //pthread_mutex_unlock(&e->waitingMutex);
+        int64_t i=atomic_load(&e->waitingCount);
+        while(i--)
+                ksiSemPost(&e->waitingSem);
         //ksiSemPost(&e->masterSem);
         for(int i=0;i<e->nprocs;i++){
                 PERROR_GUARDED("Stop audio worker POSIX thread",
@@ -82,6 +80,7 @@ void ksiEngineDestroy(KsiEngine *e){
         }
         ksiVecDestroy(&e->nodes[0]);
         ksiVecDestroy(&e->nodes[1]);
+        ksiSemDestroy(&e->waitingSem);
 
         ksiSemPost(&e->committingSem); // Get the committer not waiting
         PERROR_GUARDED("Stop DAG modification committing POSIX thread",
@@ -117,11 +116,11 @@ static inline void enqueue_signaled(KsiEngine *e,KsiWorkQueue *q,int tid,void *v
         ksiWorkQueueCommit(q, tid, v);
         //printf("enqueued\n", c);
 #ifdef SLEEP_ENABLED
-        if(atomic_load(&e->waitingCount)){
-                pthread_mutex_lock(&e->waitingMutex);
-                //printf("post\n");
-                pthread_cond_signal(&e->waitingCond);
-                pthread_mutex_unlock(&e->waitingMutex);
+        int64_t i = atomic_load_explicit(&e->waitingCount,memory_order_relaxed);
+        if(i>0){
+                //printf("post %d\n",i);
+                atomic_fetch_sub_explicit(&e->waitingCount, 1,memory_order_relaxed);
+                ksiSemPost(&e->waitingSem);
         }
 #endif
 }
@@ -164,6 +163,9 @@ static inline KsiNode *dequeue_blocked(KsiEngine *e,int tid){
         int trials = 0;
         int failed = 0;
         result = ksiWorkQueueGet(&e->tasks, tid);
+        if(result == ksiRingBufferFailedVal){
+                result = ksiRingBufferTake(&e->tasks.rbs[0], e->tasks.nprocs, tid);
+        }
         while(result == ksiRingBufferFailedVal){
                 if(e->playing!=ksiEnginePlaying)
                         break;
@@ -171,29 +173,16 @@ static inline KsiNode *dequeue_blocked(KsiEngine *e,int tid){
 #ifdef SLEEP_ENABLED
                 trials ++;
                 if(trials > TRIALS_BEFORE_HANGING){
-                        atomic_fetch_add(&e->waitingCount, 1);
                         //printf("waiting\n");
-                        struct timeval now;
-                        struct timespec wt;
-                        gettimeofday(&now,NULL);
-                        wt.tv_sec = now.tv_sec;
-                        wt.tv_nsec = now.tv_usec*1000UL + (SLEEP_NSEC_BASE << failed);
-                        pthread_mutex_lock(&e->waitingMutex);
-                        //pthread_cond_wait(&e->waitingCond, &e->waitingMutex);
-                        if(pthread_cond_timedwait(&e->waitingCond, &e->waitingMutex, &wt)){
-                                pthread_mutex_unlock(&e->waitingMutex);
+                        atomic_fetch_add_explicit(&e->waitingCount,1,memory_order_relaxed);
+                        if(ksiSemTryWait(&e->waitingSem,0,SLEEP_NSEC_BASE<<failed)){
                                 if(failed < SLEEP_NSEC_MAX_FAIL){
                                         failed ++;
                                 }
-                                //printf("%d\n",failed);
                         }
-                        else {
-                                pthread_mutex_unlock(&e->waitingMutex);
-                                failed = 0;
+                        else{
+                                failed=0;
                         }
-                        atomic_fetch_sub(&e->waitingCount, 1);
-                        //printf("wake up %d\n",atomic_load(&e->waitingCount));
-                        //nanosleep(&sleepTime, NULL);
                         trials = 0;
                 }
 #endif

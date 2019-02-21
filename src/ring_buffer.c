@@ -37,7 +37,6 @@ void ksiRingBufferInit(KsiRingBuffer *rb,int nprocs){
         while(nprocs --){
                 atomic_init(&rb->ebrEntries[nprocs].active, 0);
                 rb->ebrEntries[nprocs].epoch = 0;
-                rb->ebrEntries[nprocs].years = 0;
                 int i = 3;
                 while(i --)
                         rb->ebrEntries[nprocs].freelist[i] = NULL;
@@ -78,7 +77,7 @@ void ksiRingBufferDestroy(KsiRingBuffer *rb,int nprocs){
 #ifdef CNT
                         int ccnt =
 #endif
-                        destroyFromTail(rb->ebrEntries[i].freelist[epoch]);
+                                destroyFromTail(rb->ebrEntries[i].freelist[epoch]);
 #ifdef CNT
                         cnt += ccnt;
                         printf("%d objects destroyed for epoch %d tid %d\n", ccnt, epoch,i);
@@ -88,51 +87,46 @@ void ksiRingBufferDestroy(KsiRingBuffer *rb,int nprocs){
 #ifdef CNT
         int acnt =
 #endif
-        destroyFromTail(atomic_load_explicit(&rb->tail, memory_order_relaxed));
+                destroyFromTail(atomic_load_explicit(&rb->tail, memory_order_relaxed));
 #ifdef CNT
         cnt += acnt;
         printf("%d objects freed during finalization. %d live objects.\n", cnt, acnt);
 #endif
 }
-static inline void tryFree(KsiRingBufferEBREntry *ee,KsiRingBuffer *rb,int nprocs,int tid){
-#ifdef FREE
-        if(ee->years > ksiRingBufferEBRThreshold){
-                ee->years = 0;
-                uint64_t epoch = atomic_load_explicit(&rb->epoch,memory_order_acquire);
+void ksiRingBufferTryFree(KsiRingBuffer *rb,int nprocs,int tid){
+        KsiRingBufferEBREntry *ee = rb->ebrEntries + tid;
+        uint64_t epoch = atomic_load_explicit(&rb->epoch,memory_order_acquire);
+        int i = nprocs;
+        int canFree = 1;
+        while(i--){
+                if(atomic_load_explicit(&rb->ebrEntries[i].active,memory_order_acquire) && (rb->ebrEntries[i].epoch != epoch))
+                        canFree = 0;
+        }
+        if(!canFree)
+                return;
+        uint64_t dummy = epoch;
+        if(atomic_compare_exchange_strong_explicit(&rb->epoch,&dummy,(epoch+1)%3,memory_order_release,memory_order_relaxed)){
                 int i = nprocs;
-                int canFree = 1;
-                while(i--){
-                        if(atomic_load_explicit(&rb->ebrEntries[i].active,memory_order_acquire) && (rb->ebrEntries[i].epoch != epoch))
-                                canFree = 0;
-                }
-                if(!canFree)
-                        return;
-                uint64_t dummy = epoch;
-                if(atomic_compare_exchange_strong_explicit(&rb->epoch,&dummy,(epoch+1)%3,memory_order_release,memory_order_relaxed)){
-                        int i = nprocs;
 #ifdef CNT
-                        int cnt = 0;
+                int cnt = 0;
 #endif
-                        while(i--){
+                while(i--){
 #ifdef CNT
-                                cnt +=
+                        cnt +=
 #endif
                                 destroyFromTail(rb->ebrEntries[i].freelist[(epoch+2)%3]);
-                                rb->ebrEntries[i].freelist[(epoch+2)%3]=NULL;
-                        }
-#ifdef CNT
-                        printf("%d objects freed during GC\n", cnt);
-#endif
+                        rb->ebrEntries[i].freelist[(epoch+2)%3]=NULL;
                 }
-                rb->ebrEntries[tid].epoch = (epoch+1)%3;
-        }
+#ifdef CNT
+                printf("%d objects freed during GC\n", cnt);
 #endif
+        }
+        rb->ebrEntries[tid].epoch = (epoch+1)%3;
 }
 void ksiRingBufferPush(KsiRingBuffer *rb,void *data,int tid){
         KsiRingBufferSegment *head = rb->head;
 #ifdef FREE
         atomic_store_explicit(&rb->ebrEntries[tid].active, 1, memory_order_relaxed);
-        rb->ebrEntries[tid].years ++;
         rb->ebrEntries[tid].epoch = atomic_load_explicit(&rb->epoch,memory_order_relaxed);
 #endif
         uint64_t _head_idx = atomic_load_explicit(&head->head_idx,memory_order_relaxed);
@@ -155,7 +149,6 @@ void ksiRingBufferPush(KsiRingBuffer *rb,void *data,int tid){
 void *ksiRingBufferTake(KsiRingBuffer *rb,int nprocs,int tid){
 #ifdef FREE
         atomic_store_explicit(&rb->ebrEntries[tid].active, 1, memory_order_relaxed);
-        rb->ebrEntries[tid].years ++;
         rb->ebrEntries[tid].epoch = atomic_load_explicit(&rb->epoch,memory_order_acquire);
 #endif
         KsiRingBufferSegment *tail = atomic_load_explicit(&rb->tail,memory_order_acquire);
@@ -189,7 +182,6 @@ void *ksiRingBufferTake(KsiRingBuffer *rb,int nprocs,int tid){
                                         ee->freelist[ee->epoch] = prevTail;
 #endif
                                 }
-                                tryFree(ee, rb, nprocs, tid);
                         }
                         else
                                 return ksiRingBufferFailedVal;
@@ -203,7 +195,6 @@ void *ksiRingBufferTake(KsiRingBuffer *rb,int nprocs,int tid){
 void *ksiRingBufferPop(KsiRingBuffer *rb,int nprocs,int tid){
 #ifdef FREE
         atomic_store_explicit(&rb->ebrEntries[tid].active, 1, memory_order_relaxed);
-        rb->ebrEntries[tid].years ++;
         rb->ebrEntries[tid].epoch = atomic_load_explicit(&rb->epoch,memory_order_acquire);
 #endif
         KsiRingBufferSegment *head = rb->head;
@@ -245,7 +236,6 @@ void *ksiRingBufferPop(KsiRingBuffer *rb,int nprocs,int tid){
                                 KsiRingBufferEBREntry *ee = rb->ebrEntries + tid;
                                 tmp->prev = ee->freelist[ee->epoch];
                                 ee->freelist[ee->epoch] = tmp;
-                                tryFree(ee, rb, nprocs, tid);
 #endif
                                 continue;
                         }

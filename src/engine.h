@@ -38,9 +38,10 @@ typedef struct _KsiEngine{
         KsiSem migratedSem; // audio -> committer: I've updated audioEpoch
         KsiWorkQueue tasks;
         KsiSem masterSem;
-        //_Atomic int waitingCount;
-        //pthread_mutex_t waitingMutex;
-        //pthread_cond_t waitingCond;
+
+        _Atomic int64_t waitingCount;
+        KsiSem waitingSem;
+
         void **outputBufferPointer[2];//One for each version
 #define ksiEngineStopped 0
 #define ksiEnginePlaying 1

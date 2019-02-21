@@ -36,5 +36,6 @@ void ksiRingBufferInit(KsiRingBuffer *rb,int nprocs);
 void ksiRingBufferPush(KsiRingBuffer *rb,void *data,int tid);
 void *ksiRingBufferPop(KsiRingBuffer *rb,int nprocs,int tid);
 void *ksiRingBufferTake(KsiRingBuffer *rb,int nprocs,int tid);
+void ksiRingBufferTryFree(KsiRingBuffer *rb,int nprocs,int tid);
 void ksiRingBufferDestroy(KsiRingBuffer *rb,int nprocs);
 #endif
