@@ -191,14 +191,14 @@ static inline KsiNode *dequeue_blocked(KsiEngine *e,int tid){
         return (KsiNode *)result;
 }
 #include "inline_meta.h"
-static inline void ksiNodeFuncWrapper(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
+static inline void ksiNodeFuncWrapper(KsiNode *n){
         switch(ksiNodeTypeInlineId(n->type)){
         case 0:
-                ((KsiNodeFunc)n->extArgs)(n,inputBuffers,outputBuffer);
+                ((KsiNodeFunc)n->extArgs)(n);
                 break;
 #define INLINE_CASE(id,name,reqrs,dm,...)                          \
                 case id:                                        \
-                        name(n,inputBuffers,outputBuffer); \
+                        name(n); \
                         break;
                 INLINE_PROPERTY(INLINE_CASE);
 #undef INLINE_CASE
@@ -224,6 +224,7 @@ static void* ksiEngineAudioWorker(void *args){
                         n->inputCache[i].i = 0;
                         int dirty = 0;
                         int8_t type = n->inputTypes[i];
+                        // Mixer for each input port
                         KsiMixerEnvEntry *me = n->env.portEnv[i].mixer;
                         KsiData *buf = n->env.portEnv[i].buffer;
                         if(buf){

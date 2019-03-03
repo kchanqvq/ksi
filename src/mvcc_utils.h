@@ -6,6 +6,8 @@
 // flag = 0 for editing
 // flag = 1 for commiting
 static inline void *ksiMVCCMonitoredMalloc(KsiEngine *e, size_t size, int flag){
+        if(!size)
+                return NULL;
         KsiSPSCPtrList *q = &e->mallocBufs;
         void *ret;
         switch(flag){
@@ -23,6 +25,8 @@ static inline void *ksiMVCCMonitoredMalloc(KsiEngine *e, size_t size, int flag){
         return ret;
 }
 static inline void ksiMVCCDeferredFree(KsiEngine *e, void *ptr, int flag){
+        if(!ptr)
+                return;
         switch(flag){
         case 0:
                 ksiSPSCPtrListEnqueue(&e->freeBufs, ptr);
@@ -41,6 +45,8 @@ static inline void ksiMVCCDeferredFree(KsiEngine *e, void *ptr, int flag){
         }
 }
 static inline void *ksiMVCCRealloc(KsiEngine *e, void *ptr, size_t size, int flag){
+        if(!ptr)
+                return ksiMVCCMonitoredMalloc(e, size, flag);
         KsiSPSCPtrList *q = &e->mallocBufs;
         void *ret;
         switch(flag){

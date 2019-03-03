@@ -31,6 +31,19 @@
 #define LISTCOUNT_X(LISTCOUNT_num,...) _LISTCOUNT_X(LISTCOUNT_num __VA_ARGS__,_E)
 #define LISTCOUNT(x) (0 LISTCOUNT_X x)
 #define LISTCOUNT_Y(LISTCOUNT_num,...) _LISTCOUNT_Y(LISTCOUNT_num __VA_ARGS__,_E)
+
+#define LISTNONNIL_EAT_Z(...)
+#define _LISTNONNIL_EAT_X(LISTNONNIL_EAT_num,LISTNONNIL_EAT_k,...) LISTNONNIL_EAT_k(LISTNONNIL_EAT_Z(LISTNONNIL_EAT_num) LISTNONNIL_EAT_Y)
+#define _LISTNONNIL_EAT_Y(LISTNONNIL_EAT_num,LISTNONNIL_EAT_k,...) LISTNONNIL_EAT_k(LISTNONNIL_EAT_Z(LISTNONNIL_EAT_num) LISTNONNIL_EAT_X)
+#define LISTNONNIL_EAT_X(LISTNONNIL_EAT_num,...) _LISTNONNIL_EAT_X(LISTNONNIL_EAT_num __VA_ARGS__,_E)
+#define LISTNONNIL_EAT_Y(LISTNONNIL_EAT_num,...) _LISTNONNIL_EAT_Y(LISTNONNIL_EAT_num __VA_ARGS__,_E)
+#define LISTNONNIL(x) CAT(LISTNONNIL_C,LISTNONNIL_A x)()
+#define LISTNONNIL_A(x) _N() LISTNONNIL_EAT_X
+#define LISTNONNIL_CLISTNONNIL_EAT_X() 0
+#define LISTNONNIL_C() 1
+//#define LISTNONNIL_C1 1
+//#define LISTNONNIL_CLISTNONNIL_EAT_X 0
+
 #define CONDITIONAL1(...) __VA_ARGS__
 #define CONDITIONAL0(...)
 #define CONDITIONAL(cond,...) CAT(CONDITIONAL,cond)(__VA_ARGS__)
@@ -51,6 +64,8 @@ static inline void* ksiMalloc(size_t s){
         }
 }
 static inline void* ksiRealloc(void *ptr, size_t s){
+        if(!ptr)
+                return ksiMalloc(s);
         void *ret;
         ret = realloc(ptr,s);
         if(ret)
