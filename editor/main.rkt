@@ -41,7 +41,6 @@
     (define/augment (after-select snip on?)
       (when on?
         (send this set-before snip #f)
-        ;; Rest of the after-select definition remains unchanged...
         ))
     (define/augment (after-interactive-move event)
       (define sx (box 0))
@@ -128,7 +127,12 @@
                                 editorx
                                 editory
                                 event)
-      (when (send event button-up?) (println event)))
+      (define mx (- (send event get-x) editorx))
+      (define my (- (send event get-y) editory))
+      (define (within-range x a b) (and (< x b) (> x a)))
+      (define (within-range-around x center r) (within-range x (- center r)))
+      (cond [(send event button-down?) (cond
+                                         )]))
     ))
 (send pb insert (new node-snip%))
 (send pb insert (new node-snip% [xblocks 5] [yblocks 4]))
