@@ -6,7 +6,6 @@
 (define (is-signal-port? p) (eq? (node-port-type p) 'signal))
 (define (is-event-port? p) (eq? (node-port-type p) 'event))
 (define (can-connect? p1 p2)
-  (println (list p1 p2))
   (apply eq? (map node-port-type (list p1 p2))))
 (define (new-node-port type) (node-port type #f '()))
 
@@ -199,8 +198,6 @@
   (send (get-the-snip-class-list) add wire-snip-class)
     (define/public (update pb)
       (send pb move-to this (- (min inlet-x outlet-x) wire-margin) (- (min inlet-y outlet-y) wire-margin))
-      ;;(println (list (- (min inlet-x outlet-x) wire-margin) (- (min inlet-y outlet-y) wire-margin)))
-      ;;(println pb)
       (send pb resized this #t))
   (define/override (get-extent dc x y
                                [w #f]
