@@ -17,7 +17,8 @@
 (define border-color (make-color 100 100 100))
 (define grid-width (* block-size 0.05))
 (define grid-color (make-color 50 50 50))
-(define background-color (make-color 30 30 30))
+;;(define background-color (make-color 30 30 30))
+(define background-color (make-color 255 255 255))
 (define wire-width (* block-size 0.1))
 (define wire-curve-ratio 1/4)
 (define wire-curve-coratio (- 1 wire-curve-ratio))
@@ -101,7 +102,7 @@
                             (h (send this find-next-selected-snip s))))])
           (h s1)))))
     (define/override (on-double-click snip event)
-      '())
+      (send this set-caret-owner snip))
     (define/augment (can-interactive-move? event)
       (not incomplete-wire))
     (define/override (find-snip x y [after #f])
@@ -254,7 +255,7 @@
     (set-snipclass node-snip-class)
     (send (get-the-snip-class-list) add node-snip-class)
     (set-flags (cons 'handles-all-mouse-events (get-flags)))
-    (send this set-editor (new text%))
+    ;;(send this set-editor (new text%))
     (define/override (get-extent dc x y
                                  [w #f]
                                  [h #f]
@@ -296,7 +297,8 @@
             (for ([(p i) (in-indexed inlets)])
               (draw-port i p (ycoord 0)))
             (for ([(p i) (in-indexed outlets)])
-              (draw-port i p (ycoord yblocks))))
+              (draw-port i p (ycoord yblocks)))
+      (super draw dc x y left top right bottom dx dy draw-caret))
     (define/override (copy)
       (new node-snip% [xblocks yblocks]))
     (define/public (adjust-wire-location x y wire port-id in-or-out)
@@ -334,7 +336,7 @@
     (define/public (set-highlight-outlet l)
       (set-highlight outlets l)
       (refresh-outlet))
-    (define/public (handle-port-event inlet-action outlet-action x y event)
+    (define/public (handle-port-event inlet-action outlet-action x y event [other-action (lambda () '())])
       (define (xcoord xb) (+ x node-margin (* xb block-size)))
       (define (ycoord yb) (+ y node-margin (* yb block-size)))
       (define ex (send event get-x))
@@ -356,7 +358,8 @@
         [(within-range-around my (* block-size yblocks) port-mouse-radius)
          (when (void? (handle-port-event outlets outlet-action)) (set-highlight-outlet #f))]
         [#t (set-highlight-inlet #f)
-         (set-highlight-outlet #f)]))
+         (set-highlight-outlet #f)
+         (other-action)]))
     (define/override (on-event dc
                                 x
                                 y
@@ -386,8 +389,7 @@
                                              (lambda (nw port)
                                                                    (set-field! outlet-port nw port)
                                                                    (set-field! outlet-node nw this)) (ycoord yblocks))
-                        x y event)
-      (cond [(send event button-down?) ]))
+                        x y event))
     ))
 (send pb insert (new node-snip% [inlets (map new-node-port '(signal signal event))]))
 (send pb insert (new node-snip% [inlets (map new-node-port '(signal event))] [outlets (map new-node-port '(signal signal event))]))
