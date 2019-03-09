@@ -18,11 +18,13 @@ typedef struct{
 
         //Local variables
         int32_t nextEvent;//Global timestamp
+        float freq;
+        int32_t gating;
 } plugin_env;
-#define $freq (n->outputCache[0].f)
-#define $gating (n->outputCache[1].i)
 KsiError kscarletMidiSegEditCmd(KsiNode *n,const char *args,const char **pcli_err_str,int flag){
         plugin_env *env = (plugin_env *)n->args;
+#define $freq env->freq
+#define $gating env->gating
         switch(args[0]){
         case 'm':{
                 args ++;
@@ -63,7 +65,7 @@ void kscarletMidiSegReset(KsiNode *n){
 void kscarletMidiSegDestroy(KsiNode *n){
         free(n->args);
 }
-void kscarletMidiSeg(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
+void kscarletMidiSeg(KsiNode *n){
         plugin_env *env = (plugin_env *)n->args;
         if(!env->current){
                 if(!env->tree)
@@ -87,13 +89,15 @@ void kscarletMidiSeg(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         else
                                 localNextEvent = -1;
                 }
-                outputBuffer[i+bufsize].i = $gating;
-                outputBuffer[i].f = $freq;
+                n->outputBuffer[1].d[i].i = $gating;
+                n->outputBuffer[0].d[i].f = $freq;
         }
         ksiNodePortIOSetDirty(n->outputTypes[0]);
         ksiNodePortIOSetDirty(n->outputTypes[1]);
         return;
 bypass:
+        n->outputBuffer[1].d[bufsize-1].i = $gating;
+        n->outputBuffer[0].d[bufsize-1].f = $freq;
         ksiNodePortIOClear(n->outputTypes[0]);
         ksiNodePortIOClear(n->outputTypes[1]);
         return;

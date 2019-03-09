@@ -1,8 +1,8 @@
 #include <errno.h>
 #include <math.h>
+#include "engine.h"
 #include "dag.h"
 #include "dagedit.h"
-#include "engine.h"
 #include "cmd.h"
 #include "resource.h"
 //static counter;
@@ -104,23 +104,6 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                         goto rt_err;
         }
                 break;
-        case 'S':{
-                lptr++;
-                cmd = "Set an input sample";
-                int32_t id,pid;
-                int consumed;
-                int readcount = sscanf(lptr, "%"SCNd32":%"SCNd32"x%n", &id,&pid,&consumed);
-                CHECK_READ(2);
-                lptr+=consumed;
-                int8_t t;
-                err = ksiEngineGetInputType(e, id, pid, &t);
-                if(err)
-                        goto rt_err;
-                INPUT_G(g, t);
-                ((KsiNode *)(e->nodes[0].data[id]))->inputCache[pid]=g;
-                ((KsiNode *)(e->nodes[1].data[id]))->inputCache[pid]=g;
-                break;
-        }
         case 'u':{
                 lptr++;
                 cmd = "Remove wire";
@@ -243,7 +226,6 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                       "Remove wire: u[Source ID]:[Source port]>[Destination ID]:[Destination port]\n"
                       "Load time sequence resource file: o[file name]\n"
                       "Unload time sequence resource file: t[resource id]\n"
-                      "Set an input sample:S[Node ID]:[Port]x[Value]"
                       "Edit node:e[Node ID] [Node-spercified editing command]"
                       "Start playing: p\n"
                       "Stop playing: s\n"

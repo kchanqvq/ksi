@@ -4,8 +4,9 @@
 #include "mvcc_utils.h"
 #include <inttypes.h>
 
-void ksiBuiltinNodeFuncId(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer);
+//For audio output only
+void ksiBuiltinNodeFuncId(KsiNode *n);
 KsiError ksiBuiltinNodeFuncIdEditCmd(KsiNode *n,const char *args,const char **pcli_err_str,int flag);
-void ksiBuiltinNodeFuncTestOsc(KsiNode *n,KsiData **inputBuffers,KsiData *ob);
-void ksiBuiltinNodeFuncModulator(KsiNode *n,KsiData **inputBuffers,KsiData *ob);
+void ksiBuiltinNodeFuncTestOsc(KsiNode *n);
+void ksiBuiltinNodeFuncModulator(KsiNode *n);
 #endif

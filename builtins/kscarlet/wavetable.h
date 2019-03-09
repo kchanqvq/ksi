@@ -3,5 +3,5 @@
 #include "engine.h"
 void kscarletWavetableInit(KsiNode *n);
 void kscarletWavetableDestroy(KsiNode *n);
-void kscarletWavetable(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer);
+void kscarletWavetable(KsiNode *n);
 #endif

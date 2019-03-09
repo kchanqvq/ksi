@@ -11,8 +11,7 @@
                 _(ksiErrorPortNotFound,"Port out of range")             \
                 _(ksiErrorSrcPortNotFound,"Source port out of range")   \
                 _(ksiErrorDesPortNotFound,"Destination port out of range") \
-                _(ksiErrorSrcPortOccupied,"Source port already occupied. Remove current wire to it first") \
-                _(ksiErrorDesPortOccupied,"Destination port already occupied. Remove current wire to it first") \
+                _(ksiErrorAlreadyWire,"There's already a wire between the spercified ports.") \
                 _(ksiErrorMultipleFinal,"There's already a final output") \
                 _(ksiErrorRing,"The wire to add will form a ring")\
                 _(ksiErrorWireNotFound,"No wire between provided ports")\
@@ -24,6 +23,7 @@
                 _(ksiErrorSyntax,"Syntax error")\
                 _(ksiErrorResIdNotFound,"No loaded time sequence resource with provided ID")\
                 _(ksiErrorType,"Incompatible input and output type")\
+                _(ksiErrorNeedSignal,"This operation is only allowed for signal ports.")                                  \
                 _(ksiErrorNoEditCmd,"The plugin does not support editing")\
                 _(ksiErrorNoPlugin,"No plugin with spercified plugin ID")\
                 _(ksiErrorPlugin,"Plugin error")

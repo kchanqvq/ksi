@@ -1,6 +1,5 @@
 #ifndef __engine_h__
 #define __engine_h__
-#include "dag.h"
 #include "err.h"
 #include "queue.h"
 #include <pthread.h>
@@ -8,6 +7,7 @@
 #include "spsc_buffer.h"
 #include "_config.h"
 #include "cmd_queue.h"
+#include "dag_members.h"
 #ifndef ALIGN
 #define ALIGN __attribute__((aligned(_CONFIG_CACHE_SIZE*2)))
 #endif
@@ -42,7 +42,7 @@ typedef struct _KsiEngine{
         _Atomic int64_t waitingCount;
         KsiSem waitingSem;
 
-        void **outputBufferPointer[2];//One for each version
+        KsiOutputPtr **outputBufferPointer[2];//One for each version
 #define ksiEngineStopped 0
 #define ksiEnginePlaying 1
 #define ksiEnginePaused 2

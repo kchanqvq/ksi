@@ -18,21 +18,19 @@ void kscarletWavetableInit(KsiNode *n){
 void kscarletWavetableDestroy(KsiNode *n){
         free(n->args);
 }
-#define $freq (n->inputCache[0].f)
-#define $gate (n->inputCache[1].i)
-#define $wf (n->inputCache[2].i)
-#define $mod (n->inputCache[3].f)
-void kscarletWavetable(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
+void kscarletWavetable(KsiNode *n){
+        int32_t bufsize = n->e->framesPerBuffer;
         plugin_env *env = (plugin_env *)n->args;
-        if($gate&&!(n->inputTypes[1]&ksiNodePortIODirty)){
+        if(!(n->inputTypes[1]&ksiNodePortIODirty)){
+                if(ksiNodeGetInput(n, bufsize, 1, 0).i)
                 ksiNodePortIOClear(n->outputTypes[0]);
                 return;
         }
-        for(int32_t i=0;i<n->e->framesPerBuffer;i++){
-                ksiNodeRefreshCache(n, 0, i);
-                ksiNodeRefreshCache(n, 1, i);
-                ksiNodeRefreshCache(n, 2, i);
-                ksiNodeRefreshCache(n, 3, i);
+        for(int32_t i=0;i<bufsize;i++){
+#define $freq ksiNodeGetInput(n, bufsize, 0, i).f
+#define $gate ksiNodeGetInput(n, bufsize, 1, i).i
+#define $wf ksiNodeGetInput(n, bufsize, 2, i).i
+#define $mod ksiNodeGetInput(n, bufsize, 3, i).f
                 if($gate){
                         continue;
                 }
@@ -48,16 +46,16 @@ void kscarletWavetable(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         env->currentPos+=1.0f;
                 switch($wf){
                 case 1:
-                        outputBuffer[i].f=sinf(env->currentPos*2*M_PI);
+                        n->outputBuffer[0].d[i].f=sinf(env->currentPos*2*M_PI);
                         break;
                 case 2:
-                        outputBuffer[i].f=-2*env->currentPos+1.0f;
+                        n->outputBuffer[0].d[i].f=-2*env->currentPos+1.0f;
                         break;
                 case 3:
-                        outputBuffer[i].f=env->currentPos<0.25f?env->currentPos*4:env->currentPos<0.75f?(-env->currentPos*4+2.0f):(env->currentPos*4-4.0f);
+                        n->outputBuffer[0].d[i].f=env->currentPos<0.25f?env->currentPos*4:env->currentPos<0.75f?(-env->currentPos*4+2.0f):(env->currentPos*4-4.0f);
                         break;
                 case 4:
-                        outputBuffer[i].f=(mod<0.5f)?env->currentPos<mod?1.0f:(-mod/(1-mod)):env->currentPos<mod?((1-mod)/mod):-1.0f;
+                        n->outputBuffer[0].d[i].f=(mod<0.5f)?env->currentPos<mod?1.0f:(-mod/(1-mod)):env->currentPos<mod?((1-mod)/mod):-1.0f;
                         break;
                 }
         }

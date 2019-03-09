@@ -9,7 +9,7 @@
 #include <math.h>
 typedef struct{
         int32_t currentTime;
-        int8_t currentStage;
+        int32_t currentStage;
         float currentStageStartMod;
         float currentMod;
         float currentBias;
@@ -22,6 +22,7 @@ typedef struct{
 #define stageHalt 0
 void kscarletADSRInit(KsiNode *n){
         n->args=malloc(sizeof(plugin_env));
+        kscarletADSRReset(n);
 }
 void kscarletADSRDestroy(KsiNode *n){
         free(n->args);
@@ -32,31 +33,31 @@ void kscarletADSRReset(KsiNode *n){
         env->currentMod = 0.0f;
 }
 
-void kscarletADSR(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
+void kscarletADSR(KsiNode *n){
         plugin_env *env = (plugin_env *)n->args;
         int32_t bufsize = n->e->framesPerBuffer;
         if(env->currentStage==stageHalt&&(!(n->inputTypes[0]&ksiNodePortIODirty))){
-                n->outputCache[0].f = 0.0;
-                n->outputCache[1].i = 1;
+                n->outputBuffer[0].d[bufsize-1].f = 0.0;
+                n->outputBuffer[1].d[bufsize-1].i = 1;
                 ksiNodePortIOClear(n->outputTypes[0]);
                 ksiNodePortIOClear(n->outputTypes[1]);
                 return;
         }
         for(int32_t i=0;i<bufsize;i++){
-                if((env->currentStage==stageHalt||env->currentStage==stageRelease)&&ksiNodeGetInput(n,inputBuffers,0,i).i==0){
+                if((env->currentStage==stageHalt||env->currentStage==stageRelease)&&ksiNodeGetInput(n,bufsize,0,i).i==0){
                         env->currentTime = 1;
                         env->currentStage = stageAttack;
                         //printf("attack\n");
-                        env->stageDuration = round(ksiNodeGetInput(n,inputBuffers,1,i).f*n->e->framesPerSecond);
+                        env->stageDuration = round(ksiNodeGetInput(n,bufsize,1,i).f*n->e->framesPerSecond);
                         env->currentStageStartMod = env->currentMod;
                         env->currentBias = (M_E-env->currentStageStartMod)/(M_E-1);
                         //printf("%f",env->currentBias);
                 }
-                else if((env->currentStage!=stageHalt&&env->currentStage!=stageRelease)&&ksiNodeGetInput(n,inputBuffers,0,i).i==1){
+                else if((env->currentStage!=stageHalt&&env->currentStage!=stageRelease)&&ksiNodeGetInput(n,bufsize,0,i).i==1){
                         env->currentTime = 1;
                         env->currentStage = stageRelease;
                         //printf("release\n");
-                        env->stageDuration = round(ksiNodeGetInput(n,inputBuffers,4,i).f*n->e->framesPerSecond);
+                        env->stageDuration = round(ksiNodeGetInput(n,bufsize,4,i).f*n->e->framesPerSecond);
                         env->currentStageStartMod = env->currentMod;
                         env->currentBias = env->currentStageStartMod/(M_E*M_E*M_E-1);
                 }
@@ -66,8 +67,8 @@ void kscarletADSR(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                         if(!(env->currentTime<env->stageDuration)){
                                 env->currentStage = stageDecay;
                                 //printf("decay\n");
-                                env->currentStageStartMod=ksiNodeGetInput(n,inputBuffers,3,i).f;
-                                env->stageDuration=round(ksiNodeGetInput(n,inputBuffers,2,i).f*n->e->framesPerSecond);
+                                env->currentStageStartMod=ksiNodeGetInput(n,bufsize,3,i).f;
+                                env->stageDuration=round(ksiNodeGetInput(n,bufsize,2,i).f*n->e->framesPerSecond);
                                 env->currentBias = (M_E*M_E*M_E*env->currentStageStartMod-1)/(M_E*M_E*M_E-1);
                                 env->currentTime = 0;
                         }
@@ -90,13 +91,13 @@ void kscarletADSR(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
                 }
                 env->currentTime++;
                 if(env->currentStage!=stageHalt){
-                        outputBuffer[i].f=env->currentMod;
+                        n->outputBuffer[0].d[i].f=env->currentMod;
                         //printf("put %f \n",env->currentMod);
-                        outputBuffer[i+bufsize].i=0;
+                        n->outputBuffer[1].d[i].i=0;
                 }
                 else{
-                        outputBuffer[i].f=0;
-                        outputBuffer[i+bufsize].i=1;
+                        n->outputBuffer[0].d[i].f=0.0;
+                        n->outputBuffer[1].d[i].i=1;
                 }
         }
         ksiNodePortIOSetDirty(n->outputTypes[0]);

@@ -53,10 +53,10 @@ static inline KsiError impl_ksiEngineAddNode(KsiEngine *e,int32_t typeFlags,void
         n->extArgs = args;
         n->depNum = 0;
         n->e = e;
-#define INLINE_INIT_MF(__,id,name,prop,in,out,ein,eout,...) __ _N()(id,name,LISTNONNIL in,LISTNONNIL out,LISTNONNIL ein,LISTNONNIL eout,LISTCOUNT in,LISTCOUNT out,LISTCOUNT ein,LISTCOUNT eout,_E prop)
+#define INLINE_INIT_MF(__,id,name,prop,in,out,...) __ _N()(id,name,LISTNONNIL in,LISTNONNIL out,LISTCOUNT in,LISTCOUNT out,_E prop)
 #define INLINE_INIT(_) _E(INLINE_LIST(INLINE_INIT_MF,_,INLINE_INPORT_END))
         switch(ksiNodeTypeInlineId(typeFlags)){
-#define DEF_INIT(id,name,nni,nno,nnei,nneo,ni,no,nei,neo,res,dm,...) case id: \
+#define DEF_INIT(id,name,nni,nno,ni,no,res,dm,...) case id: \
                 n->inputCount = ni;                                     \
                 BRANCH(nni,n->inputTypes = CAT(name,InPorts),n->inputTypes=NULL); \
                 n->outputCount = no;                                    \
@@ -71,34 +71,32 @@ static inline KsiError impl_ksiEngineAddNode(KsiEngine *e,int32_t typeFlags,void
         for(int32_t i=0;i<n->inputCount;i++){
                 if(n->inputTypes[i]&ksiNodePortTypeEventFlag){
                         n->env[i].e = ksiMalloc(sizeof(KsiEventEnv));
-                        n->env[i].e->numOfInputs = 0;
-                        n->env[i].e->eqs = NULL;
+                        n->env[i].e->ees = NULL;
                 }
                 else{
                         n->env[i].d = ksiMalloc(sizeof(KsiSignalEnv));
                         n->env[i].d->buffer = NULL;
-                        n->env[i].d->cache = 0;
                         n->env[i].d->internalBufferPtr = NULL;
                         n->env[i].d->mixer = NULL;
                 }
         }
+        n->outputBuffer = ksiMVCCMonitoredMalloc(e, sizeof(KsiOutputPtr)*e->framesPerBuffer*n->outputCount, flag);
+        for(int32_t i=0;i<n->outputCount;i++){
+                if(n->outputTypes[i]&ksiNodePortTypeEventFlag){
+                        n->outputBuffer[i].e.head = NULL;
+                        n->outputBuffer[i].e.tail = NULL;
+                        //This initialization is not necessary
+                        //Just do it for clarity
+                }
+                else{
+                        n->outputBuffer[i].d = ksiMVCCMonitoredMalloc(e, sizeof(KsiData) * e->framesPerBuffer, flag);
+                }
+        }
         switch(typeFlags&ksiNodeTypeOutputMask){
         case ksiNodeTypeOutputNormal:
-                n->outputBuffer = (KsiData *)ksiMVCCMonitoredMalloc(e, sizeof(KsiData)*e->framesPerBuffer*n->outputCount, flag);
-                for(int32_t i=0;i<n->outputCount;i++){
-                        if(n->outputTypes[i]&ksiNodePortTypeEventFlag){
-                                n->outputBuffer[i].e.head = NULL;
-                                n->outputBuffer[i].e.tail = NULL;
-                                //This initialization is not necessary
-                                //Just do it for clarity
-                        }
-                        else{
-                                n->outputBuffer[i].d = ksiMVCCMonitoredMalloc(e, sizeof(KsiData) * e->framesPerBuffer, flag);
-                        }
-                }
                 break;
         case ksiNodeTypeOutputFinal:
-                e->outputBufferPointer[(1+epoch)%2] = (void **)&n->outputBuffer;
+                e->outputBufferPointer[(1+epoch)%2] = &n->outputBuffer;
                 break;
         }
         if(!flag){
@@ -134,7 +132,18 @@ static inline KsiError impl_ksiEngineMakeWire(KsiEngine *e,int32_t srcId,int32_t
                 des->depNum++;
         }
         if(type&ksiNodePortTypeEventFlag){
-
+                KsiEventEnvEntry *ee = des->env[desPort].e->ees;
+                while(ee){
+                        if(ee->src == src && ee->srcPort == srcPort){
+                                return ksiErrorAlreadyWire;
+                        }
+                        ee = ee->next;
+                }
+                KsiEventEnvEntry *newEntry = ksiMalloc(sizeof *newEntry);
+                newEntry->src = src;
+                newEntry->srcPort = srcPort;
+                newEntry->next = des->env[desPort].e->ees;
+                des->env[desPort].e->ees = newEntry;
         }
         else{
                 KsiMixerEnvEntry *me = des->env[desPort].d->mixer;
@@ -151,8 +160,8 @@ static inline KsiError impl_ksiEngineMakeWire(KsiEngine *e,int32_t srcId,int32_t
                 newEntry->src=src;
                 newEntry->srcPort=srcPort;
                 newEntry->gain = gain;
-                newEntry->next = des->env.portEnv[desPort].mixer;
-                des->env.portEnv[desPort].mixer = newEntry;
+                newEntry->next = des->env[desPort].d->mixer;
+                des->env[desPort].d->mixer = newEntry;
                 refreshCopying(e, des, desPort, flag);
         }
         return ksiErrorNone;
@@ -162,8 +171,11 @@ static inline KsiError impl_ksiEngineMakeBias(KsiEngine *e,int32_t desId,int32_t
         CHECK_VEC(desId, *nlist, ksiErrorIdNotFound);
         KsiNode *des = nlist->data[desId];
         CHECK_DES_PORT(des, desPort, ksiErrorPortNotFound);
-        KsiMixerEnvEntry *me = des->env.portEnv[desPort].mixer;
         int8_t type = des->inputTypes[desPort];
+        if(type&ksiNodePortTypeEventFlag){
+                return ksiErrorNeedSignal;
+        }
+        KsiMixerEnvEntry *me = des->env[desPort].d->mixer;
         while(me){
                 if(me->src == NULL){
                         ksiDataIncrease(&me->gain, bias, type);
@@ -177,10 +189,19 @@ static inline KsiError impl_ksiEngineMakeBias(KsiEngine *e,int32_t desId,int32_t
         newEntry->src=NULL;
         newEntry->srcPort=0;
         newEntry->gain = bias;
-        newEntry->next = des->env.portEnv[desPort].mixer;
-        des->env.portEnv[desPort].mixer = newEntry;
+        newEntry->next = des->env[desPort].d->mixer;
+        des->env[desPort].d->mixer = newEntry;
         refreshCopying(e, des, desPort, flag);
         return ksiErrorNone;
+}
+static inline void delete_src(KsiEngine *e, KsiNode *des,int32_t i/*the port*/,KsiNode *src,int flag){
+        if(des->inputTypes[i]&ksiNodePortTypeEventFlag){
+                ksiVecListDelete(des->env[i].e->ees, ->src==src, , KsiEventEnvEntry);// Ice cream
+        }
+        else{
+                ksiVecListDelete(des->env[i].d->mixer, ->src==src, , KsiMixerEnvEntry);// Ice cream
+                refreshCopying(e, des, i, flag);
+        }
 }
 static inline KsiError impl_ksiEngineDetachNodes(KsiEngine *e,int32_t srcId,int32_t desId,int flag){
         hotList(nlist);
@@ -190,8 +211,7 @@ static inline KsiError impl_ksiEngineDetachNodes(KsiEngine *e,int32_t srcId,int3
         KsiNode *des = nlist->data[desId];
         des->depNum --;
         for(int32_t i=0;i<des->inputCount;i++){
-                ksiVecListDelete(des->env.portEnv[i].mixer, ->src==src, , KsiMixerEnvEntry);// Ice cream
-                refreshCopying(e, des, i, flag);
+                delete_src(e, des, i, src, flag);
         }
         ksiVecListDelete(src->successors, ->loc == desId, break, KsiVecIdlistNode);// Ice cream
         return ksiErrorNone;
@@ -207,8 +227,7 @@ static inline KsiError impl_ksiEngineRemoveNode(KsiEngine *e,int32_t id,KsiNode 
                 KsiNode *s = nlist->data[sn->loc];
                 s->depNum --;
                 for(int32_t i=0;i<s->inputCount;i++){
-                        ksiVecListDelete(s->env.portEnv[i].mixer, ->src == n,, KsiMixerEnvEntry);
-                        refreshCopying(e, s, i, flag);
+                        delete_src(e, s, i, n, flag);
                 }
                 sn=sn->next;
         }
@@ -218,13 +237,21 @@ static inline KsiError impl_ksiEngineRemoveNode(KsiEngine *e,int32_t id,KsiNode 
         p->type|=ksiNodeTypeScratchPredecessor;\
         } // Ice cream
         for(int32_t i=0;i<n->inputCount;i++){
-                KsiMixerEnvEntry *me = n->env.portEnv[i].mixer;
-                while(me){
-                        KsiNode *p = me->src;
-                        debug_check_node(e, me->src, hotEpoch);
-                        if(p)
-                                PUT_TO_LIST(precs, p);
-                        me=me->next;
+#define REG_PRECS(me)                                           \
+                while(me){                                      \
+                        KsiNode *p = me->src;                   \
+                        debug_check_node(e, me->src, hotEpoch); \
+                        if(p)                                   \
+                                PUT_TO_LIST(precs, p);          \
+                        me=me->next;                            \
+                }
+                if(n->inputTypes[i]&ksiNodePortTypeEventFlag){
+                        KsiEventEnvEntry *ee = n->env[i].e->ees;
+                        REG_PRECS(ee);
+                }
+                else{
+                        KsiMixerEnvEntry *me = n->env[i].d->mixer;
+                        REG_PRECS(me);
                 }
         }
         while(precs){
@@ -249,8 +276,10 @@ static inline KsiError impl_ksiEngineRemoveWire(KsiEngine *e,int32_t srcId,int32
         KsiNode *des = nlist->data[desId];
         CHECK_SRC_PORT(src, srcPort, ksiErrorSrcPortNotFound);
         CHECK_DES_PORT(des, desPort, ksiErrorDesPortNotFound);
-        KsiMixerEnvEntry *me = des->env.portEnv[desPort].mixer;
-        KsiMixerEnvEntry **preloc = &des->env.portEnv[desPort].mixer;
+        KsiMixerEnvEntry **preloc = (des->inputTypes[desPort]&ksiNodePortTypeEventFlag)?
+                &des->env[desPort].e->ees:
+                &des->env[desPort].d->mixer;
+        KsiMixerEnvEntry *me = *preloc;
         int foundEntries = 0;
         int deleted = 0;
         while(me){
@@ -281,7 +310,7 @@ static inline KsiError impl_ksiEngineRemoveWire(KsiEngine *e,int32_t srcId,int32
                 ksiVecListDelete(src->successors,->loc==des->id , break, KsiVecIdlistNode);// Ice cream
                 des->depNum --;
         }
-        if(deleted){
+        if(deleted&&!(des->inputTypes[desPort]&ksiNodePortTypeEventFlag)){
                 refreshCopying(e, des, desPort, flag);
                 return ksiErrorNone;
         }
@@ -311,16 +340,18 @@ static inline KsiNode *ksiEngineDestroyNode(KsiEngine *e, KsiNode *n,int flag){
         case ksiNodeTypeOutputFinal:
                 break;
         }
-        ksiMVCCDeferredFree(e, n->inputCache, flag);
-        ksiMVCCDeferredFree(e, n->outputCache, flag);
         ksiVecListDestroy(n->successors, KsiVecIdlistNode);
         for(int32_t i=0;i<n->inputCount;i++){
-                ksiVecListDestroy(n->env.portEnv[i].mixer,KsiMixerEnvEntry);
-                if(n->env.portEnv[i].buffer)
-                        ksiMVCCDeferredFree(e, n->env.portEnv[i].buffer, flag);
+                if(n->inputTypes[i]&ksiNodePortTypeEventFlag){
+                        ksiVecListDestroy(n->env[i].e->ees,KsiEventEnvEntry);
+                }
+                else{
+                        ksiVecListDestroy(n->env[i].d->mixer,KsiMixerEnvEntry);
+                        if(n->env[i].d->buffer)
+                                ksiMVCCDeferredFree(e, n->env[i].d->buffer, flag);
+                }
         }
-        free(n->env.portEnv);
-        free(n->env.internalBufferPtr);
+        free(n->env);
         if(flag){
                 switch(ksiNodeTypeInlineId(n->type)){
 #define INLINE_CASE(id,name,reqrs,dm,...)                               \

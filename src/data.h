@@ -1,6 +1,11 @@
 #ifndef __data_h__
 #define __data_h__
-#include "dag.h"
+typedef union{int32_t i;float f;} KsiData;
+#define ksiNodePortTypeFloat 0x0
+#define ksiNodePortTypeGate 0x1
+#define ksiNodePortTypeInt32 0x2
+#define ksiNodePortTypeEventFlag 0x8
+#define ksiNodePortTypeMask 0xF
 
 static inline void ksiDataIncrease(KsiData* s,KsiData i,int8_t type){
         switch(type&ksiNodePortTypeMask){

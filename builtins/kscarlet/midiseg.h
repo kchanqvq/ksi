@@ -5,5 +5,5 @@ KsiError kscarletMidiSegEditCmd(KsiNode *n,const char *args,const char **pcli_er
 void kscarletMidiSegReset(KsiNode *n);
 void kscarletMidiSegInit(KsiNode *n);
 void kscarletMidiSegDestroy(KsiNode *n);
-void kscarletMidiSeg(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer);
+void kscarletMidiSeg(KsiNode *n);
 #endif

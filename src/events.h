@@ -15,6 +15,9 @@ typedef struct _KsiEventNode{
         KsiEvent *next;
         KsiEvent e;
 } KsiEventNode;
+// tail->node->node->node->head
+// The producer node enqueue to head
+// Consumer nodes iterate from tail to head
 typedef struct _KsiEventQueue{
         KsiEventNode* head;
         KsiEventNode* tail;

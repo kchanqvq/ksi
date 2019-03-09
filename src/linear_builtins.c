@@ -1,26 +1,11 @@
 #include "linear_builtins.h"
 #include <math.h>
-// 2 -> 2
-void ksiBuiltinNodeFuncId(KsiNode *n,KsiData **inputBuffers,KsiData *outputBuffer){
-        switch(n->type&ksiNodeTypeOutputMask){
-        case ksiNodeTypeOutputFinal:
-                for(int32_t i=0;i<n->e->framesPerBuffer;i++){
-                        int32_t j = n->inputCount;
-                        while(j--){
-                                ksiNodeRefreshCache(n, j, i);
-                                ((KsiData** )outputBuffer)[j][i].f=n->inputCache[j].f;
-                        }
+void ksiBuiltinNodeFuncId(KsiNode *n){
+        for(int32_t i=0;i<n->e->framesPerBuffer;i++){
+                int32_t j = n->inputCount;
+                while(j--){
+                        n->outputBuffer[j].d[i] = ksiNodeGetInput(n, n->e->framesPerBuffer, j, i);
                 }
-                break;
-        case ksiNodeTypeOutputNormal:
-                for(int32_t i=0;i<n->e->framesPerBuffer;i++){
-                        int32_t j = n->inputCount;
-                        while(j--){
-                                ksiNodeRefreshCache(n, j, i);
-                                outputBuffer[j*n->e->framesPerBuffer+j].f=n->inputCache[j].f;
-                        }
-                }
-                break;
         }
 }
 KsiError ksiBuiltinNodeFuncIdEditCmd(KsiNode *n,const char *args,const char **pcli_err_str,int flag){
@@ -51,24 +36,29 @@ syn_err:
         return ksiErrorSyntax;
 }
 // 1 -> 1
-void ksiBuiltinNodeFuncTestOsc(KsiNode *n,KsiData **inputBuffers,KsiData *ob){
+void ksiBuiltinNodeFuncTestOsc(KsiNode *n){
         int32_t bufsize = n->e->framesPerBuffer;
         for(int32_t i = 0;i<bufsize;i++){
-                ksiNodeRefreshCache(n, 0, i);
-                float freq = n->inputCache[0].f==0?100.0:n->inputCache[0].f;
+                float freq = ksiNodeGetInput(n, bufsize, 0, i).f;
+                if(freq == 0)
+                        freq = 441.0;
                 float dfreq = freq/n->e->framesPerSecond;
-                ob[i].f = sinf(2*M_PI*((float)(n->e->timeStamp)+i)*dfreq);
+                n->outputBuffer[0].d[i].f = sinf(2*M_PI*((float)(n->e->timeStamp)+i)*dfreq);
         }
         ksiNodePortIOSetDirty(n->outputTypes[0]);
 }
 // 2 -> 1
-void ksiBuiltinNodeFuncModulator(KsiNode *n,KsiData **inputBuffers,KsiData *ob){
+void ksiBuiltinNodeFuncModulator(KsiNode *n){
         int32_t bufsize = n->e->framesPerBuffer;
-        for(int32_t i=0;i<bufsize;i++){
-                ksiNodeRefreshCache(n, 0, i);
-                ksiNodeRefreshCache(n, 1, i);
-                ob[i].f=n->inputCache[0].f*n->inputCache[1].f;
-                //printf("%f,%f ", n->inputCache[0].f,n->inputCache[1].f);
+        if((n->inputTypes[0]&ksiNodePortIODirty)||(n->inputTypes[1]&ksiNodePortIODirty)){
+                for(int32_t i=0;i<bufsize;i++){
+                        n->outputBuffer[0].d[i].f = ksiNodeGetInput(n, bufsize, 0, i).f * ksiNodeGetInput(n, bufsize, 1, i).f;
+                        //printf("%f,%f ", n->inputCache[0].f,n->inputCache[1].f);
+                }
+                ksiNodePortIOSetDirty(n->outputTypes[0]);
         }
-        ksiNodePortIOSetDirty(n->outputTypes[0]);
+        else{
+                n->outputBuffer[0].d[bufsize - 1].f = ksiNodeGetInput(n, bufsize, 0, 0).f * ksiNodeGetInput(n, bufsize, 1, 0).f;
+                ksiNodePortIOClear(n->outputTypes[0]);
+        }
 }

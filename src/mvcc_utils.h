@@ -64,6 +64,8 @@ static inline void *ksiMVCCRealloc(KsiEngine *e, void *ptr, size_t size, int fla
         return ret;
 
 }
+//When new count > old count, add new ports, with types in newTypes.
+//Otherwise, delete ports.
 static inline void impl_ksiNodeChangeInputPortCount(KsiNode *n,int32_t port_count,int8_t* newTypes,int flag){
         if(!(n->type & ksiNodeTypeDynamicInputType)){
                 int8_t* new_types = ksiMalloc(sizeof(int8_t) * port_count);
@@ -73,18 +75,21 @@ static inline void impl_ksiNodeChangeInputPortCount(KsiNode *n,int32_t port_coun
         }
         else
                 n->inputTypes = ksiRealloc(n->inputTypes, sizeof(int8_t) * port_count);
-        n->inputCache = ksiMVCCRealloc(n->e, n->inputCache, sizeof(KsiData) * port_count, flag);
-        n->env.portEnv = ksiRealloc(n->env.portEnv, sizeof(KsiMixerEnvEntry) * port_count);
-        n->env.internalBufferPtr = ksiRealloc(n->env.internalBufferPtr, sizeof(KsiData *) * port_count);
+        n->env = ksiRealloc(n->env, sizeof(KsiEnvPtr) * port_count);
         if(port_count > n->inputCount){
                 for(int32_t i = n->inputCount; i < port_count; i++){
-                        n->env.portEnv[i].mixer = NULL;
-                        n->env.portEnv[i].buffer = NULL;
-                        n->env.internalBufferPtr[i] = NULL;
-                        n->inputTypes[i] = newTypes[i-n->inputCount];
-                }
-                if(!flag){
-                        memset(n->inputCache+n->inputCount, 0, sizeof(KsiData)*(port_count - n->inputCount));
+                        if(newTypes[i-n->inputCount]&ksiNodePortTypeEventFlag){
+                                n->env[i].e = ksiMalloc(sizeof(KsiEventEnv));
+                                n->env[i].e->ees = NULL;
+                        }
+                        else{
+                                n->env[i].d = ksiMalloc(sizeof(KsiSignalEnv));
+                                KsiSignalEnv *se = n->env[i].d;
+                                se->mixer = NULL;
+                                se->buffer = NULL;
+                                se->internalBufferPtr = NULL;
+                                n->inputTypes[i] = newTypes[i-n->inputCount];
+                        }
                 }
         }
         n->inputCount = port_count;
@@ -98,18 +103,22 @@ static inline void impl_ksiNodeChangeOutputPortCount(KsiNode *n,int32_t port_cou
         }
         else
                 n->outputTypes = ksiRealloc(n->outputTypes, sizeof(int8_t) * port_count);
-        n->outputCache = ksiMVCCRealloc(n->e, n->outputCache, sizeof(int8_t) * port_count, flag);
         if((n->type&ksiNodeTypeOutputMask) == ksiNodeTypeOutputNormal){
-        n->outputBuffer = ksiMVCCRealloc(n->e, n->outputBuffer, sizeof(KsiData) * n->e->framesPerBuffer * port_count, flag);
-        if(port_count > n->outputCount){
-                for(int32_t i = n->inputCount; i < port_count; i++){
-                        n->outputTypes[i] = newTypes[i-n->outputCount];
+                n->outputBuffer = ksiMVCCRealloc(n->e, n->outputBuffer, sizeof(KsiOutputPtr) * n->e->framesPerBuffer * port_count, flag);
+                if(port_count > n->outputCount){
+                        for(int32_t i = n->inputCount; i < port_count; i++){
+                                n->outputTypes[i] = newTypes[i-n->outputCount];
+                                if(n->outputTypes[i]&ksiNodePortTypeEventFlag){
+                                        if(!flag){
+                                                n->outputBuffer[i].e.head = NULL;
+                                                n->outputBuffer[i].e.tail = NULL;
+                                        }
+                                }
+                                else{
+                                        n->outputBuffer[i].d = ksiMVCCMonitoredMalloc(n->e, sizeof(KsiData)*n->e->framesPerBuffer, flag);
+                                }
+                        }
                 }
-                if(!flag){
-                        memset(n->outputBuffer+n->outputCount*n->e->framesPerBuffer, 0, sizeof(KsiData)*n->e->framesPerBuffer*(port_count - n->outputCount));
-                        memset(n->outputCache+n->outputCount, 0, sizeof(KsiData)*(port_count - n->outputCount));
-                }
-        }
         }
         n->outputCount = port_count;
 }
