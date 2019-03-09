@@ -13,12 +13,12 @@
 (define round-size (* block-size 0.25))
 (define port-radius (* block-size 0.1))
 (define port-mouse-radius (* block-size 0.2))
+(define mouse-unmoved-threshold (exact-ceiling (* block-size 0.1)))
 (define border-width (* block-size 0.05))
 (define border-color (make-color 100 100 100))
 (define grid-width (* block-size 0.05))
 (define grid-color (make-color 50 50 50))
-;;(define background-color (make-color 30 30 30))
-(define background-color (make-color 255 255 255))
+(define background-color (make-color 30 30 30))
 (define wire-width (* block-size 0.1))
 (define wire-curve-ratio 1/4)
 (define wire-curve-coratio (- 1 wire-curve-ratio))
@@ -28,7 +28,8 @@
                              ((is-event-port? p) event-port-color)
                              ('t (raise "Unknown port type"))))
 (define port-highlight-radius (* block-size 0.5))
-(define node-margin (* block-size 0.5))
+(define node-margin (inexact->exact (* block-size 0.5)))
+(define node-text-margin (inexact->exact (* block-size 0.7)))
 (define wire-margin (* block-size 0.2))
 (define (make-port-highlight-brush r g b)
   (new brush% [gradient
@@ -51,7 +52,10 @@
 (define c (new editor-canvas% [parent f]))
 (define graph-board%
   (class pasteboard%
-    (init-field [incomplete-wire #f])
+    (init-field [incomplete-wire #f]
+                [drag-x #f]
+                [drag-y #f]
+                [selecting #f])
     (super-new)
     (define/override (on-paint before? dc . other)
       (when before?
@@ -87,22 +91,34 @@
         (send snip bring-all-wire-to-front this)
         (send this set-before snip #f)
         ))
+    (define/augment (on-select snip on?)
+      (when (and on? (not incomplete-wire))
+        (set! selecting #t)))
     (define/augment (can-select? snip on?)
       (equal? node-snip-class (send snip get-snipclass)))
     (define/augment (after-interactive-move event)
       (define sx (box 0))
       (define sy (box 0))
       (define s1 (send this find-next-selected-snip #f))
+      (when (and (< (abs (- (send event get-x) drag-x)) mouse-unmoved-threshold) (< (abs (- (send event get-x) drag-x)) mouse-unmoved-threshold))
+        (cond
+              [(not selecting) (send this set-caret-owner (let-values ([(event-edx event-edy) (send this dc-location-to-editor-location
+                                                                                       (send event get-x)
+                                                                                       (send event get-y))]) (send this find-snip event-edx event-edy)))]))
       (when s1 (send this get-snip-location s1 sx sy)
-      (let ([dx (- (* (exact-round (/ (+ node-margin (unbox sx)) block-size)) block-size) (+ node-margin (unbox sx)))]
-            [dy (- (* (exact-round (/ (+ node-margin (unbox sy)) block-size)) block-size) (+ node-margin (unbox sy)))])
-        (letrec ([h (lambda (s)
-                      (when s (send this get-snip-location s sx sy)
-                            (send this move-to s (+ (unbox sx) dx) (+ (unbox sy) dy))
-                            (h (send this find-next-selected-snip s))))])
-          (h s1)))))
+            (let ([dx (- (* (exact-round (/ (+ node-margin (unbox sx)) block-size)) block-size) (+ node-margin (unbox sx)))]
+                  [dy (- (* (exact-round (/ (+ node-margin (unbox sy)) block-size)) block-size) (+ node-margin (unbox sy)))])
+              (letrec ([h (lambda (s)
+                            (when s (send this get-snip-location s sx sy)
+                                  (send this move-to s (+ (unbox sx) dx) (+ (unbox sy) dy))
+                                  (h (send this find-next-selected-snip s))))])
+                (h s1))))
+      (set! selecting #f))
+    (define/augment (on-interactive-move event)
+      (set! drag-x (send event get-x))
+      (set! drag-y (send event get-y)))
     (define/override (on-double-click snip event)
-      (send this set-caret-owner snip))
+      '())
     (define/augment (can-interactive-move? event)
       (not incomplete-wire))
     (define/override (find-snip x y [after #f])
@@ -241,6 +257,18 @@
       (send dc set-pen (port-color (if inlet-port inlet-port outlet-port)) wire-width 'solid)
       (send dc set-brush border-color 'transparent)
       (send dc draw-path wp))))
+(define node-text-style-delta (new style-delta%))
+(send node-text-style-delta set-delta-foreground border-color)
+(send node-text-style-delta set-transparent-text-backing-on #t)
+(send node-text-style-delta set-transparent-text-backing-off #f)
+(define node-text%
+  (class text%
+    (super-new)
+    (send this change-style node-text-style-delta)
+    (define/override (on-paint before? dc . other)
+      (when before?
+        (send dc set-background background-color)
+      (send dc clear)))))
 (define node-snip%
   (class editor-snip%
     (inherit set-snipclass
@@ -251,11 +279,12 @@
                 [extended #f]
                 [inlets (list (new-node-port 'signal))]
                 [outlets (list (new-node-port 'event))])
-    (super-new)
+    (super-new [with-border? #f])
     (set-snipclass node-snip-class)
     (send (get-the-snip-class-list) add node-snip-class)
     (set-flags (cons 'handles-all-mouse-events (get-flags)))
-    ;;(send this set-editor (new text%))
+    (let ([tx (new node-text%)])
+      (send this set-editor tx))
     (define/override (get-extent dc x y
                                  [w #f]
                                  [h #f]
@@ -264,12 +293,16 @@
                                  [lspace #f]
                                  [rspace #f])
       (define (maybe-set-box! b v) (when b (set-box! b v)))
-      (maybe-set-box! w (+ (* xblocks block-size) (* node-margin 2)))
-      (maybe-set-box! h (+ (* yblocks block-size) (* node-margin 2)))
+      (define uw (+ (* xblocks block-size) (* node-margin 2)))
+      (define uh (+ (* yblocks block-size) (* node-margin 2)))
+      (maybe-set-box! w uw)
+      (maybe-set-box! h uh)
       (maybe-set-box! descent node-margin)
       (maybe-set-box! space node-margin)
       (maybe-set-box! lspace node-margin)
-      (maybe-set-box! rspace node-margin))
+      (maybe-set-box! rspace node-margin)
+      (send this resize uw uh)
+      (send this set-margin node-text-margin node-text-margin node-text-margin node-text-margin))
 
     (define/override (draw dc x y left top right bottom dx dy draw-caret)
       (define (xcoord xb) (+ x node-margin (* xb block-size)))
@@ -389,7 +422,7 @@
                                              (lambda (nw port)
                                                                    (set-field! outlet-port nw port)
                                                                    (set-field! outlet-node nw this)) (ycoord yblocks))
-                        x y event))
+                         x y event (lambda () (super on-event dc x y editorx editory event))))
     ))
 (send pb insert (new node-snip% [inlets (map new-node-port '(signal signal event))]))
 (send pb insert (new node-snip% [inlets (map new-node-port '(signal event))] [outlets (map new-node-port '(signal signal event))]))
