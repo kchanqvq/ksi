@@ -18,4 +18,6 @@ KsiError ksiEngineCommit(KsiEngine *e);
 void ksiNodeSerialize(KsiNode *n,FILE *fp);
 void ksiEngineSerialize(KsiEngine *e,FILE *fp);
 
+void ksiNodeChangeInputPortCount(KsiNode *n,int32_t port_count,int8_t* newTypes,int flag);
+void ksiNodeChangeOutputPortCount(KsiNode *n,int32_t port_count,int8_t* newTypes,int flag);
 #endif

@@ -29,7 +29,7 @@ typedef union {
 } KsiEnvPtr;
 
 typedef union {
-        KsiEventQueue e;
+        KsiEventQueue *e;
         KsiData *d;
 } KsiOutputPtr;
 #endif

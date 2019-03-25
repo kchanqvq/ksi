@@ -1,4 +1,5 @@
 #include "rbtree.h"
+#include <stdlib.h>
 #define NULL ((void *)0ll)
 static void
 rbtree_node_init(struct rbnode *node)
@@ -8,15 +9,6 @@ rbtree_node_init(struct rbnode *node)
         node->parent = NULL;
         node->key = -1;
         /* color is left uninitialized */
-}
-
-static void
-rbtree_init(struct rbtree *tree, struct rbnode *node)
-{
-        rbtree_node_init(node);
-        rbtree_black(node);
-        tree->root = node;
-        tree->sentinel = node;
 }
 
 static struct rbnode *

@@ -1,4 +1,5 @@
 #include "linear_builtins.h"
+#include "dagedit.h"
 #include <math.h>
 void ksiBuiltinNodeFuncId(KsiNode *n){
         for(int32_t i=0;i<n->e->framesPerBuffer;i++){
@@ -22,12 +23,12 @@ KsiError ksiBuiltinNodeFuncIdEditCmd(KsiNode *n,const char *args,const char **pc
                 int8_t newTypes[i];
                 while(i--)
                         newTypes[i] = ksiNodePortTypeFloat;
-                impl_ksiNodeChangeInputPortCount(n, port_count, newTypes, flag);
-                impl_ksiNodeChangeOutputPortCount(n, port_count, newTypes, flag);
+                ksiNodeChangeInputPortCount(n, port_count, newTypes, flag);
+                ksiNodeChangeOutputPortCount(n, port_count, newTypes, flag);
         }
         else{
-                impl_ksiNodeChangeInputPortCount(n, port_count, NULL, flag);
-                impl_ksiNodeChangeOutputPortCount(n, port_count, NULL, flag);
+                ksiNodeChangeInputPortCount(n, port_count, NULL, flag);
+                ksiNodeChangeOutputPortCount(n, port_count, NULL, flag);
         }
         return ksiErrorNone;
 syn_err:

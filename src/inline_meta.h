@@ -41,12 +41,12 @@
           ((Float)(nil)));                                              \
         _(__,3,kscarletMidiSeg,(REQUIRE_RESET,DYNAMIC_MEMORY,EDIT_CMD), \
           ((nil)),                                                      \
-          ((Float)(Gate)(nil)));                              \
+          ((Float)(EventGate)(nil)));                              \
         _(__,4,kscarletWavetable,(NOT_REQUIRE_RESET,DYNAMIC_MEMORY,NO_EDIT_CMD), \
           ((Float)(Gate)(Int32)(Float)(nil)),                               \
           ((Float)(Gate)(nil)));                                   \
         _(__,5,kscarletADSR,(REQUIRE_RESET,DYNAMIC_MEMORY,NO_EDIT_CMD), \
-          ((Gate)(Float)(Float)(Float)(Float)(nil)),                         \
+          ((EventGate)(Float)(Float)(Float)(Float)(nil)),                         \
           ((Float)(Gate)(nil)));                                        \
         _(__,6,ksiBuiltinNodeFuncModulator,(NOT_REQUIRE_RESET,NO_DYNAMIC_MEMORY,NO_EDIT_CMD), \
           ((Float)(Float)(nil)),                                        \

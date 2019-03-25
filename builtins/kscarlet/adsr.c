@@ -36,30 +36,33 @@ void kscarletADSRReset(KsiNode *n){
 void kscarletADSR(KsiNode *n){
         plugin_env *env = (plugin_env *)n->args;
         int32_t bufsize = n->e->framesPerBuffer;
-        if(env->currentStage==stageHalt&&(!(n->inputTypes[0]&ksiNodePortIODirty))){
-                n->outputBuffer[0].d[bufsize-1].f = 0.0;
-                n->outputBuffer[1].d[bufsize-1].i = 1;
+        ksiNodeBeginIterateEvent(n, 0);
+        KsiEvent *nextEvent = ksiNodeGetNextEvent(n, 0);
+        if(((env->currentStage==stageHalt)||(env->currentStage==stageSustain))&&!(nextEvent)){
                 ksiNodePortIOClear(n->outputTypes[0]);
                 ksiNodePortIOClear(n->outputTypes[1]);
                 return;
         }
         for(int32_t i=0;i<bufsize;i++){
-                if((env->currentStage==stageHalt||env->currentStage==stageRelease)&&ksiNodeGetInput(n,bufsize,0,i).i==0){
-                        env->currentTime = 1;
-                        env->currentStage = stageAttack;
-                        //printf("attack\n");
-                        env->stageDuration = round(ksiNodeGetInput(n,bufsize,1,i).f*n->e->framesPerSecond);
-                        env->currentStageStartMod = env->currentMod;
-                        env->currentBias = (M_E-env->currentStageStartMod)/(M_E-1);
-                        //printf("%f",env->currentBias);
-                }
-                else if((env->currentStage!=stageHalt&&env->currentStage!=stageRelease)&&ksiNodeGetInput(n,bufsize,0,i).i==1){
-                        env->currentTime = 1;
-                        env->currentStage = stageRelease;
-                        //printf("release\n");
-                        env->stageDuration = round(ksiNodeGetInput(n,bufsize,4,i).f*n->e->framesPerSecond);
-                        env->currentStageStartMod = env->currentMod;
-                        env->currentBias = env->currentStageStartMod/(M_E*M_E*M_E-1);
+                if(nextEvent&&(nextEvent->timeStamp == n->e->timeStamp + i)){
+                        if((env->currentStage==stageHalt||env->currentStage==stageRelease)&&(nextEvent->data.i==0)){
+                                env->currentTime = 1;
+                                env->currentStage = stageAttack;
+                                //printf("attack\n");
+                                env->stageDuration = round(ksiNodeGetInput(n,bufsize,1,i).f*n->e->framesPerSecond);
+                                env->currentStageStartMod = env->currentMod;
+                                env->currentBias = (M_E-env->currentStageStartMod)/(M_E-1);
+                                //printf("%f",env->currentBias);
+                        }
+                        else if((env->currentStage!=stageHalt&&env->currentStage!=stageRelease)&&(nextEvent->data.i==1)){
+                                env->currentTime = 1;
+                                env->currentStage = stageRelease;
+                                //printf("release\n");
+                                env->stageDuration = round(ksiNodeGetInput(n,bufsize,4,i).f*n->e->framesPerSecond);
+                                env->currentStageStartMod = env->currentMod;
+                                env->currentBias = env->currentStageStartMod/(M_E*M_E*M_E-1);
+                        }
+                        nextEvent = ksiNodeGetNextEvent(n, 0);
                 }
                 switch(env->currentStage){
                 case stageAttack:

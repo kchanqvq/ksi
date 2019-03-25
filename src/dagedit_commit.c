@@ -10,22 +10,30 @@ void *ksiMVCCCommitter(void *args){
                 }
                 ksiEnginePlayingLock(e);
                 if(e->playing == ksiEnginePlaying){
-                        if(atomic_load_explicit(&e->epoch,memory_order_consume)!=atomic_load_explicit(&e->audioEpoch,memory_order_consume))
+                        if(atomic_load_explicit(&e->epoch,memory_order_consume)!=atomic_load_explicit(&e->audioEpoch,memory_order_consume)&&e->driver_env)
                                 ksiSemWait(&e->migratedSem);
                 }
                 else{
                         atomic_store_explicit(&e->audioEpoch,(atomic_load_explicit(&e->epoch,memory_order_acquire)+1)%2,memory_order_relaxed);
                 }
+                ksiCondSignal(&e->committedCond);
+                //printf("Commit\n");
                 KsiDagEditCmd cmd = ksiSPSCCmdListDequeue(&e->syncCmds);
                 while(cmd.cmd){
                         switch(cmd.cmd){
                         case ksiDagEditAddNode:{
-                                void *extArgs = malloc(cmd.data.add.len);
-                                memcpy(extArgs, cmd.data.add.node->extArgs, cmd.data.add.len);
+                                void *extArgs;
+                                if(cmd.data.add.extLen){
+                                        extArgs = malloc(cmd.data.add.extLen);
+                                        memcpy(extArgs, cmd.data.add.extArgs, cmd.data.add.extLen);
+                                }
+                                else{
+                                        extArgs = NULL;
+                                }
                                 int32_t id;
                                 KsiNode *n;
                                 impl_ksiEngineAddNode(e, cmd.data.add.typeFlags, extArgs, 1, &id, &n);
-                                n->args = cmd.data.add.node->args;
+                                n->args = cmd.data.add.args;
                                 break;
                         }
                         case ksiDagEditMakeWire:
@@ -56,6 +64,7 @@ void *ksiMVCCCommitter(void *args){
                         }
                         cmd = ksiSPSCCmdListDequeue(&e->syncCmds);
                 }
+                //printf("Committed\n");
                 ksiEnginePlayingUnlock(e);
                 if(e->playing == ksiEngineFinalizing)
                         break;

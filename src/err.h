@@ -1,6 +1,8 @@
 #ifndef __err_h__
 #define __err_h__
 #include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
 #define __err_fuck_up_emacs_indent()
 #define __err_list(_)        __err_fuck_up_emacs_indent()               \
                 _(ksiErrorNone,"Success")                               \
@@ -26,7 +28,8 @@
                 _(ksiErrorNeedSignal,"This operation is only allowed for signal ports.")                                  \
                 _(ksiErrorNoEditCmd,"The plugin does not support editing")\
                 _(ksiErrorNoPlugin,"No plugin with spercified plugin ID")\
-                _(ksiErrorPlugin,"Plugin error")
+                _(ksiErrorPlugin,"Plugin error")\
+                _(ksiErrorUninitialized,"System uninitialized")
 #define __err_enum(x,y) x,
 typedef enum{
         __err_list(__err_enum)

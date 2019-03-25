@@ -1,7 +1,7 @@
-#ifndef __sem_h__
-#define __sem_h__
-//#define __sem_experimental__
-#ifdef __sem_experimental__
+#ifndef sem_h
+#define sem_h
+//#define sem_experimental
+#ifdef sem_experimental
 #include <stdatomic.h>
 typedef _Atomic int KsiSem;
 static inline int ksiSemInit(KsiSem *s, int flags, unsigned n){

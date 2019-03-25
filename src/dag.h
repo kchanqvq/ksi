@@ -5,7 +5,6 @@
 #include <semaphore.h>
 #include "vec.h"
 #include "sem.h"
-#include <portaudio.h>
 #include "dag_members.h"
 struct _KsiEngine;
 typedef struct _KsiNode{
@@ -54,6 +53,36 @@ static inline KsiData ksiNodeGetInput(KsiNode *n,int32_t framesPerBuffer, int32_
                 return se->mixer->gain;
         return (KsiData){.i=0};
 
+}
+static inline void ksiNodeBeginIterateEvent(KsiNode *n,int32_t port){
+        KsiEventEnvEntry *ee = n->env[port].e->ees;
+        while(ee){
+                ee->currentNode = ee->src->outputBuffer[ee->srcPort].e->tail;
+                ee = ee->next;
+        }
+}
+static inline KsiEvent *ksiNodeGetNextEvent(KsiNode *n, int32_t port){
+        /*This is not elegant, forgive me*/
+        KsiEventEnvEntry *ee = n->env[port].e->ees;
+        if(!ee)
+                return NULL;
+        KsiEventNode **cn = NULL; //Soonest event node
+        size_t ct = 0; //Soonest timestamp
+        int flag = 0; //iterate through at least 1 event
+        while(ee){
+                if(ee->currentNode && (!flag || (ee->currentNode->e.timeStamp < ct))){
+                        ct = ee->currentNode->e.timeStamp;
+                        cn = &(ee->currentNode);
+                        flag = 1;
+                }
+                ee = ee->next;
+        }
+        KsiEvent *res = NULL;
+        if(cn){
+                res = &((*cn)->e);
+                *cn = (*cn)->next;
+        }
+        return res;
 }
 ksiVecDeclareList(VecNodelist, KsiNode*, node);
 #endif

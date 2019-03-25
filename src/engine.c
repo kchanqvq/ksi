@@ -16,11 +16,12 @@
 #define SLEEP_ENABLED
 KsiError _ksiEngineReset(KsiEngine *e);
 
-void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,int nprocs){
-        e->framesPerBuffer = framesPerBuffer;
-        e->framesPerSecond = framesPerSecond;
-        e->outputBufferPointer[0] = NULL;
-        e->outputBufferPointer[1] = NULL;
+void ksiEngineInit(KsiEngine *e,int32_t fb,int32_t fs,int nprocs){
+        e->framesPerBuffer = fb;
+        e->framesPerSecond = fs;
+        e->driver_env = NULL;
+        e->finalNode[0] = NULL;
+        e->finalNode[1] = NULL;
         e->workers = (pthread_t *)ksiMalloc(sizeof(pthread_t)*nprocs);
         e->nprocs = nprocs;
         e->timeStamp = 0;
@@ -39,9 +40,15 @@ void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,
         ksiSemInit(&e->committingSem, 0, 0);
         ksiSemInit(&e->migratedSem, 0, 0);
         ksiBSemInit(&e->hanging, 0, nprocs);
+        ksiCondInit(&e->committedCond);
 
+        pthread_mutexattr_t attr;
+        PERROR_GUARDED("Init engine playing state pthread mutex attribute",
+                       pthread_mutexattr_init(&attr));
+        PERROR_GUARDED("Set engine playing state pthread mutex attribute to be recursive",
+                       pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE));
         PERROR_GUARDED("Init engine playing state pthread mutex",
-                       pthread_mutex_init(&e->playingMutex, NULL));
+                       pthread_mutex_init(&e->playingMutex, &attr));
         PERROR_GUARDED("Create DAG modification committing POSIX thread",
                        pthread_create(&e->committer, NULL, ksiMVCCCommitter, e));
         e->playing = 0;
@@ -78,13 +85,15 @@ void ksiEngineDestroy(KsiEngine *e){
         else{
                 e->playing = ksiEngineFinalizing;
         }
+        ksiSemPost(&e->committingSem); // Get the committer not waiting
+        PERROR_GUARDED("Stop DAG modification committing POSIX thread",
+                       pthread_join(e->committer, NULL));
+
+        e->nprocs = 0;
         ksiVecDestroy(&e->nodes[0]);
         ksiVecDestroy(&e->nodes[1]);
         ksiSemDestroy(&e->waitingSem);
 
-        ksiSemPost(&e->committingSem); // Get the committer not waiting
-        PERROR_GUARDED("Stop DAG modification committing POSIX thread",
-                       pthread_join(e->committer, NULL));
 
         ksiEnginePlayingLock(e);
         ksiEnginePlayingUnlock(e); // Make sure it has been unlocked when destroying
@@ -108,6 +117,7 @@ void ksiEngineDestroy(KsiEngine *e){
         ksiSemDestroy(&e->masterSem);
         ksiSemDestroy(&e->committingSem);
         ksiSemDestroy(&e->migratedSem);
+        ksiCondDestroy(&e->committedCond);
         ksiBSemDestroy(&e->hanging);
         free(e->workers);
 }
@@ -127,34 +137,47 @@ static inline void enqueue_signaled(KsiEngine *e,KsiWorkQueue *q,int tid,void *v
 int ksiEngineAudioCallback( const void *input,
                             void *output,
                             unsigned long frameCount,
-                            const PaStreamCallbackTimeInfo* timeInfo,
-                            PaStreamCallbackFlags statusFlags,
                             void *userData ){
         KsiEngine *e = (KsiEngine *)userData;
+        e->framesPerBuffer = frameCount;
         if(!atomic_flag_test_and_set(&e->notRequireReset))
                 _ksiEngineReset(e);
         if(!(e->playing>0)){
                 return 0;
         }
         //while(!atomic_compare_exchange_weak(&e->cleanupCounter, &e->nprocs, 0));
-        if(e->playing==ksiEnginePaused){
-                memset(output, 0, sizeof(KsiData)*2*frameCount);
-                return 0;
-        }
         int32_t epoch = atomic_load_explicit(&e->epoch, memory_order_acquire);
         int32_t audioEpoch = atomic_load_explicit(&e->audioEpoch, memory_order_consume);
         if(epoch != audioEpoch){
                 atomic_store_explicit(&e->audioEpoch, epoch, memory_order_release);
                 ksiSemPost(&e->migratedSem);
         }
+        if(e->playing==ksiEnginePaused){
+                for(int i=0;i<2;i++){
+                        memset(((KsiData **)output)[i], 0, sizeof(KsiData)*frameCount);
+                }
+                return 0;
+        }
+        if(!e->finalNode[epoch]){
+                for(int i=0;i<2;i++){
+                        memset(((KsiData **)output)[i], 0, sizeof(KsiData)*frameCount);
+                }
+                return 0;
+        }
+        KsiNode *finalNode = e->finalNode[epoch];
+        int finalNodeChans = finalNode->outputCount;
+        int audioChans = 2;
+        int fillChans = finalNodeChans<audioChans?finalNodeChans:audioChans;
+        for(int i=0;i<fillChans;i++)
+                 finalNode->outputBuffer[i].d = ((KsiData **)output)[i];
         ksiVecBeginIterate(&e->nodes[epoch], i);
         KsiNode *n = (KsiNode *)i;
-        for(int i=0;i<2;i++)
-                (*(e->outputBufferPointer[epoch]))[i].d = ((KsiData **)output)[i];
         if(!n->depNum)
                 enqueue_signaled(e,&e->tasks, 0, n);
         ksiVecEndIterate();
         ksiSemWait(&e->masterSem);
+        for(int i=fillChans+1;i<audioChans;i++)
+                memset(((KsiData **)output)[i], 0, sizeof(KsiData)*frameCount);
         e->timeStamp+=frameCount;
         return 0;
 }
@@ -341,11 +364,6 @@ KsiError ksiEngineLaunch(KsiEngine *e){
         if(e->playing>0){
                 ksiEnginePlayingUnlock(e);
                 return ksiErrorAlreadyPlaying;
-        }
-        int epoch = atomic_load_explicit(&e->epoch,memory_order_acquire);
-        if(!e->outputBufferPointer[epoch]){
-                ksiEnginePlayingUnlock(e);
-                return ksiErrorNoFinal;
         }
         _ksiEngineReset(e);
         e->playing = 1;

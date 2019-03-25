@@ -1,4 +1,5 @@
 #include <portaudio.h>
+#include "io/pa_io.h"
 #include <unistd.h>
 #include "engine.h"
 #include "dagedit.h"
@@ -31,39 +32,16 @@ static int testAudioCallback( const void *input,
         }*/
 int main(){
         KsiEngine e;
-        int32_t fb;
-        int32_t fs;
-        int nproc;
-
-        PaError perr = Pa_Initialize();
+        e.nprocs=0;
+        PaError perr;
         const char *errtxt;
-        if( perr != paNoError ) goto pa_error;
+        char *line;
 
-        PaStream *stream;
-        char *line = linenoise("Provide framesPerBuffer,framesPerSecond,nprocs to initialize KSI engine: ");
-        if(!line)
-                return -1;
-        int p = sscanf(line,"%"SCNd32",%"SCNd32",%d", &fb,&fs,&nproc);
-        linenoiseFree(line);
-        if(p-3)
-                goto input_error;
-        ksiEngineInit(&e, fb, fs, nproc);
-        PaStreamParameters ip = {Pa_GetDefaultInputDevice(),1,paFloat32|paNonInterleaved,0,NULL};
-        PaStreamParameters op = {Pa_GetDefaultOutputDevice(),2,paFloat32|paNonInterleaved,0,NULL};
-        perr = Pa_OpenStream(&stream,
-                             &ip,
-                             &op,
-                             fs,
-                             fb,
-                             paClipOff,
-                             ksiEngineAudioCallback,
-                             &e);
-        if( perr != paNoError ) goto pa_error;
         KsiError err;
 
         while(1){
-                line = linenoise("KSID> ");
-                if(!line||consume_line(&e,stream, line, &err, &errtxt)){
+                line = linenoise("KSI> ");
+                if(!line||consume_line(&e, line, &err, &errtxt,NULL)){
                         free(line);
                         break;
                 }
@@ -71,24 +49,19 @@ int main(){
                 ksiEngineCommit(&e); //Make the change visible to audio workers
                 free(line);
         }
-        if(err==ksiErrorAudio)
-                goto pa_error_rep;
-        fputs("Finalizing KSI Engine.\n",stdout);
-        if(e.playing)
-                ksiEngineStop(&e);
-        ksiEngineDestroy(ksiEngineDestroyChild(&e));
-        perr = Pa_CloseStream(stream);
-        if( perr != paNoError ) goto pa_error;
-        perr = Pa_Terminate();
-        if( perr != paNoError ) goto pa_error;
-
+        if(e.nprocs){
+                fputs("Finalizing KSI Engine.\n",stdout);
+                if(e.playing)
+                        ksiEngineStop(&e);
+                ksiEngineDestroy(ksiEngineDestroyChild(&e));
+                if(pa_initialized){
+                        perr = Pa_Terminate();
+                        if( perr != paNoError ) goto pa_error;
+                }
+        }
         return 0;
-input_error:
-        fputs("FATAL ERROR: Illegal input\n",stderr);
-        return -1;
 pa_error:
         errtxt = Pa_GetErrorText(perr);
-pa_error_rep:
         fprintf(stderr,"FATAL ERROR: Port Audio: %s %d\n",errtxt,perr);
         return -1;
 }

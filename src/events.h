@@ -12,7 +12,7 @@ typedef struct _KsiEvent {
         };
 } KsiEvent;
 typedef struct _KsiEventNode{
-        KsiEvent *next;
+        struct _KsiEventNode *next;
         KsiEvent e;
 } KsiEventNode;
 // tail->node->node->node->head
@@ -22,20 +22,21 @@ typedef struct _KsiEventQueue{
         KsiEventNode* head;
         KsiEventNode* tail;
 } KsiEventQueue;
-#define ksiEventEnqueue(eq, ndata) do{\
-                KsiEventNode *n = ksiPoolMalloc(sizeof(KsiEventNode));  \
-                n->next = NULL;                                         \
-                n->e._Generic((ndata),\
-                              KsiData:data,\
-                              char *:str,\
-                              void *:ptr) = (ndata);                        \
+#define ksiEventEnqueue(eq, ndata, t) do{                                 \
+                KsiEventNode *n_ = ksiPoolMalloc(sizeof(KsiEventNode));  \
+                n_->next = NULL;                                         \
+                n_->e.timeStamp = (t);                                   \
+                _Generic((ndata),                               \
+                              KsiData:n_->e.data,\
+                              char *:n_->e.str,\
+                         void *:n_->e.ptr) = (ndata);                  \
                 if((eq)->tail){                                        \
-                        (eq)->head->next = n;                          \
+                        (eq)->head->next = n_;                          \
                 }                                                      \
                 else{\
-                        (eq)->tail = n;         \
+                        (eq)->tail = n_;         \
                 }                               \
-                (eq)->head = n;                 \
+                (eq)->head = n_;                 \
         }while(0)
 #define ksiEventClearQueue(eq) do{\
                 KsiEventNode *iter=(eq)->tail;          \

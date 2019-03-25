@@ -77,7 +77,7 @@ int main(){
         KsiWorkQueue rb;
         ksiWorkQueueInit(&rb, TAKES);
 #endif
-        pthread_t _pusher;
+        //pthread_t _pusher;
         pthread_t _taker[TAKES];
         int64_t r[TAKES] = {0};
         //pthread_create(&_pusher, NULL, pusher, &rb);

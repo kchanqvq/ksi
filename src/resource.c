@@ -33,6 +33,7 @@ jerr:
         return err;
 }
 KsiError ksiTimeSeqLoadToEngineFromTextFilePath(KsiEngine *e,const char * restrict path,int32_t *id){
+        CHECK_INITIALIED(e);
         KsiRBTree *n = (KsiRBTree *)malloc(sizeof(KsiRBTree));
         FILE *fp = fopen(path, "r");
         if(!fp)
@@ -45,6 +46,7 @@ KsiError ksiTimeSeqLoadToEngineFromTextFilePath(KsiEngine *e,const char * restri
         return err;
 }
 KsiError ksiTimeSeqUnloadFromEngine(KsiEngine *e,int32_t id){
+        CHECK_INITIALIED(e);
         if(id>=e->timeseqResources.size||!e->timeseqResources.data[id]){
                 return ksiErrorResIdNotFound;
         }

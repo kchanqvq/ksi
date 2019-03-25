@@ -19,12 +19,10 @@ typedef struct{
         //Local variables
         int32_t nextEvent;//Global timestamp
         float freq;
-        int32_t gating;
 } plugin_env;
 KsiError kscarletMidiSegEditCmd(KsiNode *n,const char *args,const char **pcli_err_str,int flag){
         plugin_env *env = (plugin_env *)n->args;
 #define $freq env->freq
-#define $gating env->gating
         switch(args[0]){
         case 'm':{
                 args ++;
@@ -59,7 +57,6 @@ void kscarletMidiSegInit(KsiNode *n){
 }
 void kscarletMidiSegReset(KsiNode *n){
         plugin_env *env = (plugin_env *)n->args;
-        $gating = 1;
         env->current = NULL;
 }
 void kscarletMidiSegDestroy(KsiNode *n){
@@ -67,38 +64,36 @@ void kscarletMidiSegDestroy(KsiNode *n){
 }
 void kscarletMidiSeg(KsiNode *n){
         plugin_env *env = (plugin_env *)n->args;
+        int32_t bufsize = n->e->framesPerBuffer;
         if(!env->current){
                 if(!env->tree)
                         goto bypass;
                 env->current = ksiRBTreeNextForKey(env->tree, n->e->timeStamp);
         }
-        int32_t bufsize = n->e->framesPerBuffer;
         if(!env->current)
                 goto bypass;
-        int32_t localNextEvent = env->current->key - n->e->timeStamp;
+#define current_dt (env->current->key) - n->e->timeStamp
+        int32_t localNextEvent = current_dt;
         if(localNextEvent>bufsize)
                 goto bypass;
+        ksiEventClearQueue(n->outputBuffer[1].e);
         for(int32_t i=0;i<bufsize;i++){
                 while(localNextEvent == i){
-                        $gating = (env->current->data.note.velocity == 0);
                         $freq = 440.0f*powf(2, ((float)env->current->data.note.tone-69)/12);
+                        ksiEventEnqueue(n->outputBuffer[1].e, (KsiData){.i = (env->current->data.note.velocity == 0)},n->e->timeStamp + i);
                         env->current = ksiRBTreeNext(env->tree,env->current);
                         if(env->current){
-                                localNextEvent = env->current->key - n->e->timeStamp;
+                                localNextEvent = current_dt;
                         }
                         else
                                 localNextEvent = -1;
                 }
-                n->outputBuffer[1].d[i].i = $gating;
                 n->outputBuffer[0].d[i].f = $freq;
         }
-        ksiNodePortIOSetDirty(n->outputTypes[0]);
         ksiNodePortIOSetDirty(n->outputTypes[1]);
         return;
 bypass:
-        n->outputBuffer[1].d[bufsize-1].i = $gating;
         n->outputBuffer[0].d[bufsize-1].f = $freq;
-        ksiNodePortIOClear(n->outputTypes[0]);
         ksiNodePortIOClear(n->outputTypes[1]);
         return;
 }

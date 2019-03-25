@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 Project(Ksi)
 set(CMAKE_C_FLAGS_RELEASE "-O3")
-set(CMAKE_C_FLAGS_DEBUG "-O0 -g -fno-inline")
+set(CMAKE_C_FLAGS_DEBUG "-O0 -g -fno-inline -Wall")
 if ("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
  set(CMAKE_C_FLAGS_RELEASE "-Ofast")
 endif()

@@ -94,7 +94,6 @@ void ksiRingBufferDestroy(KsiRingBuffer *rb,int nprocs){
 #endif
 }
 void ksiRingBufferTryFree(KsiRingBuffer *rb,int nprocs,int tid){
-        KsiRingBufferEBREntry *ee = rb->ebrEntries + tid;
         uint64_t epoch = atomic_load_explicit(&rb->epoch,memory_order_acquire);
         int i = nprocs;
         int canFree = 1;

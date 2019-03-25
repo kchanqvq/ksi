@@ -28,8 +28,9 @@ typedef struct _KsiDagEditCmd{
                 } topo;
                 struct {
                         int32_t typeFlags;
-                        KsiNode *node;
-                        size_t len;
+                        void *extArgs;
+                        size_t extLen;
+                        void *args;
                 } add;
                 struct {
                         int32_t id;
@@ -37,5 +38,5 @@ typedef struct _KsiDagEditCmd{
                 } cmd;
         } data;
 } KsiDagEditCmd;
-ksiSPSCDeclareList(CmdList, KsiDagEditCmd, cmd, _E((KsiDagEditCmd){0,{{0,0,0,0,0}}}));
+ksiSPSCDeclareList(CmdList, KsiDagEditCmd, cmd, _E((KsiDagEditCmd){0,{{0,0,0,0,{0}}}}));
 #endif

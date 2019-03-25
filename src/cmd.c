@@ -5,8 +5,10 @@
 #include "dagedit.h"
 #include "cmd.h"
 #include "resource.h"
+#include "io/pa_io.h"
+#include <libgen.h>
 //static counter;
-int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const char **pcli_err_str){
+int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_str,int32_t *idRet){
         //counter++;
         //printf("Command #%d\n",counter);
         //fputs(line,stdout);
@@ -14,20 +16,19 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
         KsiError err;
         const char *cli_err_str=NULL;
         char *cmd;
-        PaError perr;
         switch(lptr[0]){
         case 'n':{
                 lptr++;
-                char i,o;
+                char o;
                 int32_t type;
                 cmd = "New node";
                 int16_t funcId;
                 int readcount = sscanf(lptr, "%c%"SCNd16, &o,&funcId);
                 type = funcId;
-#define CHECK_READ(n)                                   \
-                if(readcount - n){                      \
+#define CHECK_READ(n)                                           \
+                if(readcount - n){                              \
                         cli_err_str="Invalid argument format."; \
-                        goto cli_err;                   \
+                        goto cli_err;                           \
                 }
                 CHECK_READ(2);
                 type<<=16;
@@ -46,7 +47,10 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                 err = ksiEngineAddNode(e, type, &id, NULL, 0);
                 if(err)
                         goto rt_err;
-                printf("Node created with id: %"PRId32"\n",id);
+                if(idRet)
+                        *idRet = id;
+                else
+                        printf("Node created with id: %"PRId32"\n",id);
         }
                 break;
         case 'w':{
@@ -61,19 +65,19 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                 err=ksiEngineGetInputType(e, desId, desPort, &t);
                 if(err)
                         goto rt_err;
-#define INPUT_G(g,t) \
-                KsiData g;\
-                if(t==ksiNodePortTypeFloat){\
-                        float gain;\
-                        readcount = sscanf(lptr,"%f",&gain);\
-                        CHECK_READ(1);\
-                        g.f = gain;\
-                }\
-                else{\
-                        int32_t gain;\
-                        readcount = sscanf(lptr, "%"SCNd32, &gain);\
-                        CHECK_READ(1);\
-                        g.i=gain;\
+#define INPUT_G(g,t)                                                \
+                KsiData g;                                          \
+                if((t&ksiNodePortTypeDataMask)==ksiNodePortTypeFloat){ \
+                        float gain;                                 \
+                        readcount = sscanf(lptr,"%f",&gain);        \
+                        CHECK_READ(1);                              \
+                        g.f = gain;                                 \
+                }                                                   \
+                else{                                               \
+                        int32_t gain;                               \
+                        readcount = sscanf(lptr, "%"SCNd32, &gain); \
+                        CHECK_READ(1);                              \
+                        g.i=gain;                                   \
                 }
                 INPUT_G(g,t);
                 err = ksiEngineMakeWire(e, srcId, srcPort, desId, desPort, g);
@@ -98,7 +102,6 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                 int32_t id;
                 int readcount = sscanf(lptr,"%"SCNd32,&id);
                 CHECK_READ(1);
-                KsiNode *n;
                 err = ksiEngineRemoveNode(e, id);
                 if(err)
                         goto rt_err;
@@ -115,34 +118,6 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                         goto rt_err;
         }
                 break;
-        case 'p':{
-                lptr++;
-                cmd = "Start playing";
-                err = ksiEngineLaunch(e);
-                if(err)
-                        goto rt_err;
-                perr = Pa_StartStream( stream );
-                if( perr != paNoError ){
-                        err = ksiErrorAudio;
-                        *pcli_err_str = Pa_GetErrorText(perr);
-                        goto rt_err;
-                }
-        }
-                break;
-        case 's':{
-                lptr++;
-                cmd = "Stop playing";
-                err = ksiEngineStop(e);
-                if(err)
-                        goto rt_err;
-                perr = Pa_StopStream( stream );
-                if( perr != paNoError ){
-                        err = ksiErrorAudio;
-                        *pcli_err_str = Pa_GetErrorText(perr);
-                        goto rt_err;
-                }
-        }
-                break;
         case '.':{
                 lptr++;
                 cmd = "Set time";
@@ -150,6 +125,7 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                 int readcount = sscanf(lptr, "%zu", &newt);
                 CHECK_READ(1);
                 e->timeStamp = newt;
+                ksiEngineReset(e);
                 break;
         }
         case '-':{
@@ -201,22 +177,57 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                         goto rt_err;
                 break;
         }
-        case ' ':{
-                cmd = "Pause/Resume";
-                if(e->playing == ksiEnginePlaying){
-                        err = ksiEnginePause(e);
-                        if(err)
-                                goto rt_err;
+        case 'P':{
+                cmd = "Pause";
+                err = ksiEnginePause(e);
+                if(err)
+                        goto rt_err;
+                break;
+        }
+        case 'R':{
+                cmd = "Resume";
+                err = ksiEngineResume(e);
+                if(err)
+                        goto rt_err;
+                break;
+        }
+        case 'i':{
+                cmd = "Initialize engine";
+                lptr++;
+                int nprocs;
+                int32_t fb,fs;
+                int readcount = sscanf(lptr,"%"SCNd32",%"SCNd32",%d",&fb,&fs,&nprocs);
+                CHECK_READ(3);
+                if(e->nprocs){
+                        if(e->playing){
+                                ksiEngineStop(e);
+                        }
+                        paIODestroy(e);
+                        ksiEngineDestroy(e);
                 }
-                else{
-                        err = ksiEngineResume(e);
-                        if(err)
-                                goto rt_err;
+                ksiEngineInit(e, fb, fs, nprocs);
+                break;
+        }
+        case 'a':{
+                cmd = "Initialize audio";
+                lptr++;
+                if(*lptr!='\0'&&*lptr!='\n')
+                        goto cli_err;
+                if(e->playing){
+                        ksiEngineStop(e);
                 }
+                err = paIOInit(e,&cli_err_str);
+                if(err)
+                        goto rt_err;
+                err = ksiEngineLaunch(e);
+                if(err)
+                        goto rt_err;
                 break;
         }
         case 'h':{
                 fputs("COMMAND LIST\n"
+                      "Initialize engine (this will clear previous audio setup): i[Frames per buffer],[Frames per second],[Nprocs]\n"
+                      "Initialize audio: a\n"
                       "New node: n[Output type][Built-in type]\n"
                       " Output type: n for normal and f for final output of the whole engine\n"
                       " Note: Will print the ID for the new node\n"
@@ -226,10 +237,9 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                       "Remove wire: u[Source ID]:[Source port]>[Destination ID]:[Destination port]\n"
                       "Load time sequence resource file: o[file name]\n"
                       "Unload time sequence resource file: t[resource id]\n"
-                      "Edit node:e[Node ID] [Node-spercified editing command]"
-                      "Start playing: p\n"
-                      "Stop playing: s\n"
-                      "Pause/Resume:[Space]\n"
+                      "Edit node:e[Node ID] [Node-spercified editing command]\n"
+                      "Pause:P\n"
+                      "Resume:R\n"
                       "Load command list from file: l[file name]\n"
                       "Set time: .[Time in frames] or -[Time in seconds]\n"
                       "Dump DAG: >\n"
@@ -256,13 +266,11 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                         errno = 0;
                         goto rt_err;
                 }
-                if(consume_file(e, stream, fp, ptrerr, pcli_err_str)){
-                        fputs("Encountered error while executing: ", stderr);
+                if(consume_file(e, fp, ptrerr, pcli_err_str)){
+                        fputs("In command list file: ", stderr);
                         fputs(lptr, stderr);
                         fputc('\n',stderr);
-                        err=*ptrerr;
-                        cli_err_str=*pcli_err_str;
-                        goto rt_err;
+                        return 0;
                 }
         }
                 break;
@@ -282,7 +290,10 @@ int consume_line(KsiEngine *e,PaStream *stream,char *line,KsiError *ptrerr,const
                         goto rt_err;
                 }
                 else{
-                        printf("Resource loaded with resource id %"PRId32"\n", id);
+                        if(idRet)
+                                *idRet = id;
+                        else
+                                printf("Resource loaded with resource id %"PRId32"\n", id);
                 }
         }
                 break;
@@ -315,7 +326,6 @@ cli_err:
         *ptrerr = ksiErrorSyntax;
         return 0;
 rt_err:
-        fputs("Error executing command.\n",stderr);
         fputs(cmd,stderr);
         fputs(": ",stderr);
         fputs(ksiErrorMsg(err),stderr);
@@ -332,21 +342,21 @@ quit:
         return 1;
 }
 #define BUFFER_SIZE 64
-int consume_file(KsiEngine *e,PaStream *stream,FILE *fp,KsiError *perr,const char **pcli_err_str){
+int consume_file(KsiEngine *e,FILE *fp,KsiError *perr,const char **pcli_err_str){
         char *line = NULL;
         size_t cap = 0;
         ssize_t len;
         int ferr = 0;
-        ssize_t ln=-1;
+        ssize_t ln=0;
         while((len=getline(&line, &cap, fp))>0){
                 ln++;
-                if(consume_line(e,stream,line, perr, pcli_err_str)){
+                if(consume_line(e,line, perr, pcli_err_str, NULL)){
                         break;
                 }
-                if(*perr||*pcli_err_str){
+                if(*perr){
                         ferr = 1;
-                        ssize_t li = strlen(line)-1;
-                        fprintf(stderr, "*** line %zd | ", li);
+                        ssize_t li = strlen(line);
+                        fprintf(stderr, "*** line %zd | ", ln);
                         if(li>0){
                                 fputs(line, stderr);
                                 if(line[li]!='\n')

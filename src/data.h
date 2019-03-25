@@ -5,7 +5,11 @@ typedef union{int32_t i;float f;} KsiData;
 #define ksiNodePortTypeGate 0x1
 #define ksiNodePortTypeInt32 0x2
 #define ksiNodePortTypeEventFlag 0x8
+#define ksiNodePortTypeEventFloat (0x0|0x8)
+#define ksiNodePortTypeEventGate (0x1|0x8)
+#define ksiNodePortTypeEventInt32 (0x2|0x8)
 #define ksiNodePortTypeMask 0xF
+#define ksiNodePortTypeDataMask 0x7
 
 static inline void ksiDataIncrease(KsiData* s,KsiData i,int8_t type){
         switch(type&ksiNodePortTypeMask){

@@ -3,17 +3,20 @@
 #include "err.h"
 #include "queue.h"
 #include <pthread.h>
+#include <portaudio.h>
 #include "rbtree.h"
 #include "spsc_buffer.h"
 #include "_config.h"
 #include "cmd_queue.h"
 #include "dag_members.h"
+#include "cond.h"
 #ifndef ALIGN
 #define ALIGN __attribute__((aligned(_CONFIG_CACHE_SIZE*2)))
 #endif
 typedef struct _KsiEngine{
         int32_t framesPerBuffer;
         int32_t framesPerSecond;
+        void *driver_env;
         size_t timeStamp;
 
         /* The approach here:
@@ -31,18 +34,20 @@ typedef struct _KsiEngine{
          */
         KsiVec nodes[2];//2 epoches MVCC
         KsiVec timeseqResources;// use RBTree for midi and automation
-        int nprocs;// not included master thread!
+        int nprocs;// not included master thread! //If 0, that means the system is not initialized
+#define CHECK_INITIALIED(e) if(!e->nprocs) return ksiErrorUninitialized;
         pthread_t *workers;
         pthread_t committer;
         KsiSem committingSem; // editor -> committer: I've finished a bunch of editing
         KsiSem migratedSem; // audio -> committer: I've updated audioEpoch
+        KsiCond committedCond; // committer -> editor: I've started commiting
         KsiWorkQueue tasks;
         KsiSem masterSem;
 
         _Atomic int64_t waitingCount;
         KsiSem waitingSem;
 
-        KsiOutputPtr **outputBufferPointer[2];//One for each version
+        void *finalNode[2];//One for each version
 #define ksiEngineStopped 0
 #define ksiEnginePlaying 1
 #define ksiEnginePaused 2
@@ -73,14 +78,12 @@ static inline void ksiEnginePlayingLock(KsiEngine *e){
 static inline void ksiEnginePlayingUnlock(KsiEngine *e){
         pthread_mutex_unlock(&e->playingMutex);
 }
-void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer,int32_t framesPerSecond,int nprocs);
+void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer, int32_t framesPerSecond, int nprocs);
 void ksiEngineDestroy(KsiEngine *e);
 
 int ksiEngineAudioCallback( const void *input,
                             void *output,
                             unsigned long frameCount,
-                            const PaStreamCallbackTimeInfo* timeInfo,
-                            PaStreamCallbackFlags statusFlags,
                             void *userData ) ;
 KsiError ksiEngineReset(KsiEngine *e);
 KsiError ksiEngineLaunch(KsiEngine *e);
