@@ -62,7 +62,7 @@ static inline KsiError impl_ksiEngineStop(KsiEngine *e,int state){
         ksiEnginePlayingLock(e);
         if(!(e->playing>0)){
                 ksiEnginePlayingUnlock(e);
-                return ksiErrorAlreadyStopped;
+                return ksiErrorAudioNotStarted;
         }
         if(e->playing==ksiEnginePaused)
                 ksiBSemPost(&e->hanging);
@@ -363,7 +363,7 @@ KsiError ksiEngineLaunch(KsiEngine *e){
         ksiEnginePlayingLock(e);
         if(e->playing>0){
                 ksiEnginePlayingUnlock(e);
-                return ksiErrorAlreadyPlaying;
+                return ksiErrorIdempotent;
         }
         _ksiEngineReset(e);
         e->playing = 1;
@@ -394,27 +394,35 @@ KsiError ksiEngineStop(KsiEngine *e){
 }
 KsiError ksiEnginePause(KsiEngine *e){
         ksiEnginePlayingLock(e);
+        KsiError err = ksiErrorNone;
         if(!(e->playing>0)){
-                ksiEnginePlayingUnlock(e);
-                return ksiErrorAlreadyStopped;
+                err = ksiErrorAudioNotStarted;
+                goto ret;
+        }
+        if(e->playing == ksiEnginePaused){
+                err = ksiErrorIdempotent;
+                goto ret;
         }
         e->playing = ksiEnginePaused;
+ret:
         ksiEnginePlayingUnlock(e);
         return ksiErrorNone;
 }
 KsiError ksiEngineResume(KsiEngine *e){
         ksiEnginePlayingLock(e);
+        KsiError err = ksiErrorNone;
         if(!(e->playing>0)){
-                ksiEnginePlayingUnlock(e);
-                return ksiErrorAlreadyStopped;
+                err = ksiErrorAudioNotStarted;
+                goto ret;
         }
         if(e->playing==1){
-                ksiEnginePlayingUnlock(e);
-                return ksiErrorAlreadyPlaying;
+                err = ksiErrorIdempotent;
+                goto ret;
         }
         e->playing = ksiEnginePlaying;
         ksiBSemPost(&e->hanging);
         //ksiSemPost(&e->masterSem);
+ret:
         ksiEnginePlayingUnlock(e);
         return ksiErrorNone;
 }

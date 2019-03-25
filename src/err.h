@@ -19,17 +19,17 @@
                 _(ksiErrorWireNotFound,"No wire between provided ports")\
                 _(ksiErrorFileSystem,"File system error")\
                 _(ksiErrorAudio,"Audio error")\
-                _(ksiErrorAlreadyPlaying,"Already playing")\
-                _(ksiErrorAlreadyStopped,"Already stopped")\
-                _(ksiErrorNoFinal,"No final output node")\
+                _(ksiErrorIdempotent,"Repeated operation, the current operation is ignored")\
                 _(ksiErrorSyntax,"Syntax error")\
                 _(ksiErrorResIdNotFound,"No loaded time sequence resource with provided ID")\
                 _(ksiErrorType,"Incompatible input and output type")\
-                _(ksiErrorNeedSignal,"This operation is only allowed for signal ports.")                                  \
+                _(ksiErrorNeedSignal,"This operation is only allowed for signal ports")                                  \
                 _(ksiErrorNoEditCmd,"The plugin does not support editing")\
                 _(ksiErrorNoPlugin,"No plugin with spercified plugin ID")\
                 _(ksiErrorPlugin,"Plugin error")\
-                _(ksiErrorUninitialized,"System uninitialized")
+                _(ksiErrorUninitialized,"System uninitialized")\
+                _(ksiErrorNotInBatch,"Currently not in a command batch")\
+                _(ksiErrorAudioNotStarted,"Audio not started")
 #define __err_enum(x,y) x,
 typedef enum{
         __err_list(__err_enum)

@@ -74,6 +74,8 @@ static inline void refreshCopying(KsiEngine *e, KsiNode *n, int32_t port, int fl
 static inline KsiError impl_ksiEngineAddNode(KsiEngine *e,int32_t typeFlags,void *args,int flag,int32_t *idRet,KsiNode **nRet){
         CHECK_INITIALIED(e);
         hotList(nlist);
+        if((typeFlags&ksiNodeTypeOutputMask) == ksiNodeTypeOutputFinal && e->finalNode[(1+epoch)%2])
+                return ksiErrorMultipleFinal;
         //printf("Work on flag %d epoch %d\n", flag, epoch);
         KsiNode *n = ksiMalloc(sizeof(KsiNode)); // Ice cream
         *nRet = n;

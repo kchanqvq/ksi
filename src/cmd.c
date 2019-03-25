@@ -8,7 +8,7 @@
 #include "io/pa_io.h"
 #include <libgen.h>
 //static counter;
-int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_str,int32_t *idRet){
+int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_str,int32_t *idRet,log_function lf,void *lf_args){
         //counter++;
         //printf("Command #%d\n",counter);
         //fputs(line,stdout);
@@ -49,8 +49,7 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
                         goto rt_err;
                 if(idRet)
                         *idRet = id;
-                else
-                        printf("Node created with id: %"PRId32"\n",id);
+                lf(lf_args,"Node created with id: %"PRId32"\n",id);
         }
                 break;
         case 'w':{
@@ -225,7 +224,7 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
                 break;
         }
         case 'h':{
-                fputs("COMMAND LIST\n"
+                lf(lf_args,"COMMAND LIST\n"
                       "Initialize engine (this will clear previous audio setup): i[Frames per buffer],[Frames per second],[Nprocs]\n"
                       "Initialize audio: a\n"
                       "New node: n[Output type][Built-in type]\n"
@@ -244,7 +243,7 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
                       "Set time: .[Time in frames] or -[Time in seconds]\n"
                       "Dump DAG: >\n"
                       "Quit: q\n"
-                      "Help: h\n", stdout);
+                      "Help: h\n");
         }
         case '\0':
         case '\n':
@@ -266,7 +265,7 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
                         errno = 0;
                         goto rt_err;
                 }
-                if(consume_file(e, fp, ptrerr, pcli_err_str)){
+                if(consume_file(e, fp, ptrerr, pcli_err_str,lf,lf_args)){
                         fputs("In command list file: ", stderr);
                         fputs(lptr, stderr);
                         fputc('\n',stderr);
@@ -315,26 +314,26 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
         }
         return 0;
 cli_err:
-        fputs("Illegal command. Type h for help.\n", stderr);
-        fputs(cmd,stderr);
+        lf(lf_args,"Illegal command. Type h for help.\n");
+        lf(lf_args,cmd);
         if(cli_err_str){
-                fputs(": ",stderr);
-                fputs(cli_err_str,stderr);
+                lf(lf_args,": ");
+                lf(lf_args,cli_err_str);
                 *pcli_err_str = cli_err_str;
         }
-        fputc('\n',stderr);
+        lf(lf_args,"\n");
         *ptrerr = ksiErrorSyntax;
         return 0;
 rt_err:
-        fputs(cmd,stderr);
-        fputs(": ",stderr);
-        fputs(ksiErrorMsg(err),stderr);
-        fputs(".\n",stderr);
+        lf(lf_args,cmd);
+        lf(lf_args,": ");
+        lf(lf_args,ksiErrorMsg(err));
+        lf(lf_args,".\n");
         *ptrerr = err;
         if(cli_err_str){
-                fputs("Detail: ",stderr);
-                fputs(cli_err_str,stderr);
-                fputs("\n",stderr);
+                lf(lf_args,"Detail: ");
+                lf(lf_args,cli_err_str);
+                lf(lf_args,"\n");
                 *pcli_err_str=cli_err_str;
         }
         return 0;
@@ -342,7 +341,7 @@ quit:
         return 1;
 }
 #define BUFFER_SIZE 64
-int consume_file(KsiEngine *e,FILE *fp,KsiError *perr,const char **pcli_err_str){
+int consume_file(KsiEngine *e,FILE *fp,KsiError *perr,const char **pcli_err_str,log_function lf,void *lf_args){
         char *line = NULL;
         size_t cap = 0;
         ssize_t len;
@@ -350,20 +349,20 @@ int consume_file(KsiEngine *e,FILE *fp,KsiError *perr,const char **pcli_err_str)
         ssize_t ln=0;
         while((len=getline(&line, &cap, fp))>0){
                 ln++;
-                if(consume_line(e,line, perr, pcli_err_str, NULL)){
+                if(consume_line(e,line, perr, pcli_err_str, NULL,lf,lf_args)){
                         break;
                 }
                 if(*perr){
                         ferr = 1;
                         ssize_t li = strlen(line);
-                        fprintf(stderr, "*** line %zd | ", ln);
+                        lf(lf_args, "*** line %zd | ", ln);
                         if(li>0){
-                                fputs(line, stderr);
+                                lf(lf_args,line);
                                 if(line[li]!='\n')
-                                        fputc('\n',stderr);
+                                        lf(lf_args,"\n");
                         }
                         else
-                                fputc('\n',stderr);
+                                lf(lf_args,"\n");
                         break;
                 }
         }

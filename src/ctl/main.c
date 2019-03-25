@@ -41,7 +41,7 @@ int main(){
 
         while(1){
                 line = linenoise("KSI> ");
-                if(!line||consume_line(&e, line, &err, &errtxt,NULL)){
+                if(!line||consume_line(&e, line, &err, &errtxt,NULL,fprintf,stdout)){
                         free(line);
                         break;
                 }

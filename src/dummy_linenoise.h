@@ -5,7 +5,9 @@ static inline char *linenoise(const char *prompt){
         char *linep = NULL;
         size_t linecapp = 0;//just to look more safe
         fputs(prompt, stdout);
-        getline(&linep, &linecapp, stdin);
+        if(getline(&linep, &linecapp, stdin) == -1){
+                return NULL;
+        }
         if(linecapp == 1){
                 free(linep);
                 linep = NULL;
