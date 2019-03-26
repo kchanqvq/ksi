@@ -5,6 +5,7 @@
 #include "engine.h"
 #include "dagedit.h"
 #include "util.h"
+#include <syslog.h>
 int log_eat(void *args,const char *fmt,...){
         return 0;
 }
@@ -22,12 +23,18 @@ static inline void report_type(FILE *opf, KsiEngine *e, int32_t id){
 }
 void fifo_handler(const char *ipipe_path, const char *opipe_path){
         int ipipe = open(ipipe_path, O_RDONLY);
-        puts(ipipe_path);
-        PERROR_GUARDED("Open control FIFO",
-                     ipipe == -1);
+        if(ipipe == -1){
+                syslog(LOG_ERR, "Cannot open control pipe at path %s. Error: %m",
+                       ipipe_path);
+                return;
+        }
         int opipe = open(opipe_path, O_WRONLY);
-        PERROR_GUARDED("Open return message FIFO",
-                     opipe == -1);
+        if(opipe == -1){
+                syslog(LOG_ERR, "Cannot open return message pipe at path %s. Error: %m",
+                       ipipe_path);
+                close(ipipe);
+                return;
+        }
         char *line = NULL;
         size_t linecapp = 0;
         FILE *ipf = fdopen(ipipe, "r");
@@ -137,20 +144,25 @@ static inline char *to_nul_term_string(char *s,size_t l){
         return ret;
 }
 void fifo_server(const char *lpipe_path){
-        PERROR_GUARDED("Create listen FIFO",
-                       mkfifo(lpipe_path, 0666));
         int lpipe = open(lpipe_path, O_RDONLY);
-        PERROR_GUARDED("Open listen FIFO",
-                       lpipe == -1);
+        if(lpipe == -1){
+                syslog(LOG_ERR, "Cannot open listen pipe at path %s. Error: %m",
+                       lpipe_path);
+                return;
+        }
         FILE *lpf = fdopen(lpipe, "r");
         char *ipath = NULL;
         size_t icap = 0;
-        if(getline(&ipath,&icap,lpf) == -1)
+        if(getline(&ipath,&icap,lpf) == -1){
+                syslog(LOG_ERR, "Message on listen pipe incomplete. Control pipe path missing.");
                 goto ret;
+        }
         char *opath = NULL;
         size_t ocap = 0;
-        if(getline(&opath,&ocap,lpf) == -1)
+        if(getline(&opath,&ocap,lpf) == -1){
+                syslog(LOG_ERR, "Message on listen pipe incomplete. Return pipe path missing.");
                 goto ret2;
+        }
         char *xipath = to_nul_term_string(ipath, icap);
         char *xopath = to_nul_term_string(opath, ocap);
         fifo_handler(xipath, xopath);
@@ -160,10 +172,18 @@ void fifo_server(const char *lpipe_path){
 ret2:
         free(ipath);
 ret:
-        unlink(lpipe_path);
         fclose(lpf);
 }
-
+const char *lpipe_path = "/tmp/ksid_listen";
+void term_handler(int sig){
+        unlink(lpipe_path);
+        exit(0);
+}
 int main(int argc,char **argv){
-        fifo_server("/tmp/ksid_listen");
+        signal(SIGTERM,term_handler);
+        PERROR_GUARDED("Create listen FIFO",
+                       mkfifo(lpipe_path, 0666));
+        while(1){
+            fifo_server(lpipe_path);
+        }
 }
