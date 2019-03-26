@@ -86,7 +86,7 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
                 break;
         case 'd':{
                 lptr++;
-                cmd = "Detach node connection";
+                cmd = "Detach nodes";
                 int32_t srcId,desId;
                 int readcount = sscanf(lptr, "%"SCNd32">%"SCNd32, &srcId,&desId);
                 CHECK_READ(2);
@@ -169,6 +169,8 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
                 int readcount = sscanf(lptr, "%"SCNd32" %n",&id,&consumed);
                 CHECK_READ(1);
                 lptr+=consumed;
+                if(idRet)
+                        *idRet = id;
                 err = ksiEngineSendEditingCommand(e, id, lptr, pcli_err_str, strlen(lptr)+1);
                 if(err==ksiErrorSyntax)
                         goto cli_err;
@@ -234,6 +236,7 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
                       "Make bias: b[Node ID]:[Port]x[Bias]\n"
                       "Remove node: r[ID]\n"
                       "Remove wire: u[Source ID]:[Source port]>[Destination ID]:[Destination port]\n"
+                   "Detach nodes: d[Source ID]>[Destination ID]\n"
                       "Load time sequence resource file: o[file name]\n"
                       "Unload time sequence resource file: t[resource id]\n"
                       "Edit node:e[Node ID] [Node-spercified editing command]\n"
@@ -312,6 +315,7 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
                 cli_err_str = "Invalid verb.";
                 goto cli_err;
         }
+        *pcli_err_str = NULL;
         return 0;
 cli_err:
         lf(lf_args,"Illegal command. Type h for help.\n");

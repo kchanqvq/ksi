@@ -7,12 +7,12 @@
 #define __err_list(_)        __err_fuck_up_emacs_indent()               \
                 _(ksiErrorNone,"Success")                               \
                 _(ksiErrorIdNotFound,"No node with provided ID")        \
-                _(ksiErrorSrcIdNotFound,"No node with provided source ID") \
-                _(ksiErrorDesIdNotFound,"No node with provided destination ID") \
+                _(ksiErrorSrcIdNotFound,"No node with provided source node ID") \
+                _(ksiErrorDesIdNotFound,"No node with provided destination node ID") \
                 _(ksiErrorTimeSeqIdNotFound,"No time sequence resource with provided ID") \
-                _(ksiErrorPortNotFound,"Port out of range")             \
-                _(ksiErrorSrcPortNotFound,"Source port out of range")   \
-                _(ksiErrorDesPortNotFound,"Destination port out of range") \
+                _(ksiErrorPortNotFound,"Port index out of range")             \
+                _(ksiErrorSrcPortNotFound,"Source port index out of range")   \
+                _(ksiErrorDesPortNotFound,"Destination port index out of range") \
                 _(ksiErrorAlreadyWire,"There's already a wire between the spercified ports.") \
                 _(ksiErrorMultipleFinal,"There's already a final output") \
                 _(ksiErrorRing,"The wire to add will form a ring")\

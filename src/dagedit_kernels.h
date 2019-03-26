@@ -456,10 +456,10 @@ static inline void impl_ksiNodeChangeOutputPortCount(KsiNode *n,int32_t port_cou
                 }
         }
         n->outputBuffer = ksiRealloc(n->outputBuffer, sizeof(KsiOutputPtr) * port_count);
-        if((n->type&ksiNodeTypeOutputMask) == ksiNodeTypeOutputNormal){
-                if(port_count > n->outputCount){
-                        for(int32_t i = n->outputCount; i < port_count; i++){
-                                n->outputTypes[i] = newTypes[i-n->outputCount];
+        if(port_count > n->outputCount){
+                for(int32_t i = n->outputCount; i < port_count; i++){
+                        n->outputTypes[i] = newTypes[i-n->outputCount];
+                        if((n->type&ksiNodeTypeOutputMask) == ksiNodeTypeOutputNormal){
                                 if(n->outputTypes[i]&ksiNodePortTypeEventFlag){
                                         n->outputBuffer[i].e = ksiMVCCMonitoredMalloc(n->e, sizeof(KsiEventQueue), flag);
                                         if(!flag){

@@ -1,6 +1,9 @@
 *~
 .*
 #*#
+*.pdf
+*.aux
+*.log
 !.gitignore
 !.gitmodules
 build

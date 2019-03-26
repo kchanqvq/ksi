@@ -8,12 +8,21 @@
 int log_eat(void *args,const char *fmt,...){
         return 0;
 }
-void fifo_server(const char *ipipe_path, const char *opipe_path){
-        PERROR_GUARDED("Create control FIFO",
-                     mkfifo(ipipe_path, 0666));
-        PERROR_GUARDED("Create return message FIFO",
-                     mkfifo(opipe_path, 0666));
+static inline void report_type(FILE *opf, KsiEngine *e, int32_t id){
+        int epoch = atomic_load_explicit(&e->epoch, memory_order_relaxed);
+        KsiNode *node = e->nodes[(1+epoch)%2].data[id];
+        for(int32_t i=0;i<node->inputCount;i++){
+                fputc(ksiDataTypeToCharacter(node->inputTypes[i]), opf);
+        }
+        fputc(';', opf);
+        for(int32_t i=0;i<node->outputCount;i++){
+                fputc(ksiDataTypeToCharacter(node->outputTypes[i]), opf);
+        }
+        fputc('\n', opf);
+}
+void fifo_handler(const char *ipipe_path, const char *opipe_path){
         int ipipe = open(ipipe_path, O_RDONLY);
+        puts(ipipe_path);
         PERROR_GUARDED("Open control FIFO",
                      ipipe == -1);
         int opipe = open(opipe_path, O_WRONLY);
@@ -23,21 +32,17 @@ void fifo_server(const char *ipipe_path, const char *opipe_path){
         size_t linecapp = 0;
         FILE *ipf = fdopen(ipipe, "r");
         FILE *opf = fdopen(opipe, "w");
-        PERROR_GUARDED("Unlink control FIFO",
-                       unlink(ipipe_path));
-        PERROR_GUARDED("Unlink return message FIFO",
-                       unlink(opipe_path));
         setbuf(opf, NULL);
         KsiEngine e;
         e.nprocs = 0;
         KsiError err;
-        const char *errtxt;
+        const char *errtxt = NULL;
         int32_t idRet;
         int current_in_scope = 0;
         while(1){
                 char cmd;
                 if(getline(&line, &linecapp, ipf) == -1)
-                        break;
+                        goto ret;
                 printf("%zu\n", linecapp);
                 if(linecapp == 1){
                         free(line);
@@ -71,28 +76,94 @@ void fifo_server(const char *ipipe_path, const char *opipe_path){
                         }
                 }
                 if(consume_line(&e, line, &err, &errtxt, &idRet,log_eat,NULL)){
+                        if(e.nprocs){
+                                if(e.playing)
+                                        ksiEngineStop(&e);
+                                ksiEngineDestroy(ksiEngineDestroyChild(&e));
+                        }
                         free(line);
                         break;
                 }
         next:
-                if(!current_in_scope)
-                        ksiEngineCommit(&e);
+                {
+                const char *report_err = "\0";
+                if(errtxt)
+                        report_err = errtxt;
                 if(cmd == 'n'){
                         if(err)
                                 idRet = 0;
-                        fprintf(opf, "%d;%"PRId32"\n", err, idRet);
+                        fprintf(opf, "%d;%s;%"PRId32";", err, report_err, idRet);
+                        if(!err){
+                                report_type(opf, &e, idRet);
+                        }
+                        else{
+                                fputs(";\n", opf);
+                        }
+                }
+                else if(cmd == 'e'){
+                        fprintf(opf, "%d;%s;", err, report_err);
+                        if(!err){
+                                report_type(opf, &e, idRet);
+                        }
+                        else{
+                                fputs(";\n", opf);
+                        }
                 }
                 else{
-                        fprintf(opf, "%d\n", err);
+                        fprintf(opf, "%d;%s\n", err, report_err);
                 }
+                if(!current_in_scope)
+                        ksiEngineCommit(&e);
                 err = ksiErrorNone;
                 free(line);
                 line = NULL;
                 linecapp = 0;
+                }
         }
+ret:
         fclose(ipf);
         fclose(opf);
 }
+static inline char *to_nul_term_string(char *s,size_t l){
+        char *ret = malloc(l+1);
+        memcpy(ret, s, l);
+        if(ret[l-1] == '\n')
+                ret[l-1] = '\0';
+        else
+                ret[l] = '\0';
+        char *pos = strchr(ret, '\n');
+        if (pos)
+                *pos = '\0';
+        return ret;
+}
+void fifo_server(const char *lpipe_path){
+        PERROR_GUARDED("Create listen FIFO",
+                       mkfifo(lpipe_path, 0666));
+        int lpipe = open(lpipe_path, O_RDONLY);
+        PERROR_GUARDED("Open listen FIFO",
+                       lpipe == -1);
+        FILE *lpf = fdopen(lpipe, "r");
+        char *ipath = NULL;
+        size_t icap = 0;
+        if(getline(&ipath,&icap,lpf) == -1)
+                goto ret;
+        char *opath = NULL;
+        size_t ocap = 0;
+        if(getline(&opath,&ocap,lpf) == -1)
+                goto ret2;
+        char *xipath = to_nul_term_string(ipath, icap);
+        char *xopath = to_nul_term_string(opath, ocap);
+        fifo_handler(xipath, xopath);
+        free(xipath);
+        free(xopath);
+        free(opath);
+ret2:
+        free(ipath);
+ret:
+        unlink(lpipe_path);
+        fclose(lpf);
+}
+
 int main(int argc,char **argv){
-        fifo_server("/tmp/ksid_in", "/tmp/ksid_out");
+        fifo_server("/tmp/ksid_listen");
 }

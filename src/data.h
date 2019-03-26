@@ -1,5 +1,6 @@
 #ifndef __data_h__
 #define __data_h__
+#include <assert.h>
 typedef union{int32_t i;float f;} KsiData;
 #define ksiNodePortTypeFloat 0x0
 #define ksiNodePortTypeGate 0x1
@@ -8,9 +9,33 @@ typedef union{int32_t i;float f;} KsiData;
 #define ksiNodePortTypeEventFloat (0x0|0x8)
 #define ksiNodePortTypeEventGate (0x1|0x8)
 #define ksiNodePortTypeEventInt32 (0x2|0x8)
+#define ksiNodePortTypeEventString (0x3|0x8)
+#define ksiNodePortTypeEventList (0x4|0x8)
 #define ksiNodePortTypeMask 0xF
 #define ksiNodePortTypeDataMask 0x7
-
+static char ksiDataTypeToCharacter(int8_t typeFlag){
+        switch(typeFlag&ksiNodePortTypeMask){
+        case ksiNodePortTypeEventFloat:
+                return 'F';
+        case ksiNodePortTypeEventGate:
+                return 'G';
+        case ksiNodePortTypeEventInt32:
+                return 'I';
+        case ksiNodePortTypeEventString:
+                return 'S';//dummy
+        case ksiNodePortTypeEventList:
+                return 'L';//dummy
+        case ksiNodePortTypeFloat:
+                return 'f';
+        case ksiNodePortTypeGate:
+                return 'g';
+        case ksiNodePortTypeInt32:
+                return 'i';
+        }
+        printf("%d\n",(int)typeFlag);
+        assert(0);
+        return 0;
+}
 static inline void ksiDataIncrease(KsiData* s,KsiData i,int8_t type){
         switch(type&ksiNodePortTypeMask){
         case ksiNodePortTypeFloat:

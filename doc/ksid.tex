@@ -1,0 +1,296 @@
+\documentclass{report}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{mdframed}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily,breaklines=true}
+\newcommand{\Ksi}{$\Xi$ }
+\newcommand{\todo}{\textcolor{red}{[TODO]}}
+\newcommand{\inlinecode}[1]{\begin{mdframed}[backgroundcolor=black!10]#1\end{mdframed}}
+\renewcommand{\descriptionlabel}[1]{\hspace{\labelsep}\textcolor{violet}{\textbf{#1}}}
+\title{The \Ksi Audio Engine}
+\author{Qiantan Hong}
+\begin{document}
+\maketitle
+\chapter{System Overview}
+The \Ksi audio engine is a parallel DSP execution engine which supports real-time editing of signal processing graph. The system is consisted of a scheduler, signal mixing facilities, real-time editing routines, DSP node components and a JIT recompilation module \todo.
+\section{Scheduler}
+\section{Real-time Editing Support}
+The \Ksi audio engine utilizes a real-time signal processing graph updating scheme which is wait-free from the real-time threads' side.\par
+Aside from audio worker threads and the audio $master$ thread, two additional thread is involved in signal processing graph editing process. One is the \emph{editor} thread which responds to audio editing commands called by other modules or sent by client. The other is the \emph{committer} thread which maintains the integrity of the concurrent data structures.\par
+Two copies of the same signal processing graph is maintained to support real-time updating, labelled with epoch 0 and epoch 1. This two copies have some references to shared buffers in order to make it transparent to stateful DSP components when switching between the two copies. A queue \emph{allocBufs} is used to synchronize those references. Another queue $cmds$ is used to synchronize the two signal processing graphs. The engine also keep two variables \emph{epoch} and \emph{audioEpoch} which take values in $\{0,1\}$, and the audio workers always use the signal processing graph labelled with epoch \emph{audioEpoch} to perform signal processing. At the beginning, the two signal processing graphs are empty and $epoch=audioEpoch=0$. When some editing commands are sent to the engine, the steps below is followed to perform those editing commands and keep the integrity of the two copies:
+\begin{enumerate}
+\item The \emph{editor} thread perform the editing command sequence on the signal processing graph labelled with $(epoch+1)(\mod 2)$ and enqueue each command into $cmds$ in order. If some allocation request of shared buffer occurs, it allocates the memory and enqueued the reference of the allocated memory into \emph{allocBufs}. If some deallocation request of shared buffer occurs, it can either ignore it or enqueue it to another queue $deallocCheck$ for integrity check in development environment.
+\item The \emph{editor} thread issues a commit. This means it update \emph{epoch} to $(epoch+1)(\mod 2)$ and notifies the \emph{committor} thread to start the synchronizing process. After this, the $editor$ thread is permitted to do other useful jobs and responds to client requests. However, it cannot perform any new editing command before the $committor$ notifies it the commit is completed.
+\item When $master$ start processing a new buffer, it updates $audioEpoch$ to $epoch$ and assign the workers to perform calculation using the signal processing graph labelled with epoch \emph{audioEpoch}.
+\item $committor$ waits for the condition $epoch == audioEpoch$ (this is implemented using a semaphore to avoid busy waiting). It then dequeues from $cmds$ to perform the same editing sequence on the signal processing graph labelled with $(epoch+1)(\mod 2)$. If some allocation of shared buffer occurs, it dequeues a reference from $allocBufs$ and provide this reference. If some deallocation request of shared buffer occurs, it deallocates the memory. If $deallocCheck$ is maintained, it dequeues a reference from $deallocCheck$ and issue an assertion failure if the reference does not equal to the reference which is requested to be deallocated.
+\item $committor$ notifies $editor$ that the commit is completed.
+\end{enumerate}
+\section{Component System}
+\section{Mixing Facilities}
+\section{JIT recompilation}
+\chapter{\Ksi Built-in components}
+\chapter{The \Ksi Audio Daemon}
+\section{Overview}
+The \Ksi audio daemon is a service that runs a \Ksi audio engine instance, processes editing commands sent from clients and handles signal I/O with clients or audio drivers. A \Ksi audio daemon process hosts multiple \todo signal processing graphs for multiple clients on a single audio worker thread pool to reduce scheduling overhead and thus enhance performace. The control messages between clients and the daemon are sent on named pipes. Clients may also request shared memory based IPC channels \todo for sending or receiving signals and events from the daemon.
+\section{Control Interface}
+\subsection{Channel Establishing}
+When started, the \Ksi audio daemon process opens a named pipe $p_{\texttt{listen}}$ at the path spercified in \lstinline{~/.ksidrc} and open it with read access. If not spercified, the default path \lstinline{/var/run/ksid_listen} is used.\par
+When a client want to establish a control channel with the \Ksi audio daemon, it firsts create two named pipes $p_{\texttt{control}}$ (which the \Ksi audio daemon should have read access to) and $p_{\texttt{return}}$ (which the \Ksi audio daemon should have read access to). It then tries to obtain an exclusive file lock of $p_{\texttt{listen}}$. After obtaining the value, it writes the path of $p_{\texttt{control}}$, a new line character, the path of $p_{\texttt{return}}$ and a new line character in order. It then first tries to open $p_{\texttt{control}}$ with write access and then tries to open $p_{\texttt{return}}$ with read access. After all the operations above are performed successfully, a control channel between the client and the \Ksi audio daemon process is established. The client is assigned an uninitialized signal processing graph. The client can then send control commands via writing command followed by a new line character to $p_{\texttt{control}}$, and the \Ksi audio daemon will write the return message for each command to $p_{\texttt{return}}$ in order.
+\subsection{Error Codes}
+Every commands of the \Ksi audio daemon will return an error code as the beginning of the response. The error codes are listed in Figure \ref{fig:errcode}.\par
+\begin{figure}[htbp]
+\begin{mdframed}[backgroundcolor=black!10]
+\begin{enumerate}[label=\texttt{\arabic*}]
+  \setcounter{enumi}{-1}
+\item Success.
+\item No node with provided ID.
+\item No node with provided source node ID.
+\item No node with provided destination node ID.
+\item No time sequence resource with provided ID.
+\item Port index out of range.
+\item Source port index out of range.
+\item Destination port index out of range.
+\item There's already a wire between the spercified ports.
+\item There's already a final output.
+\item The wire to add will form a ring.
+\item No wire between provided ports.
+\item File system error.
+\item Audio error.
+\item Repeated operation, the current operation is ignored.
+\item Syntax error.
+\item No loaded time sequence resource with provided ID.
+\item Incompatible input and output type.
+\item This operation is only allowed for signal ports.
+\item The plugin does not support editing.
+\item No plugin with spercified plugin ID.
+\item Plugin error.
+\item System uninitialized.
+\item Currently not in a command batch.
+\item Audio not started.
+\end{enumerate}
+\end{mdframed}
+\caption{The \Ksi audio daemon error codes}\label{fig:errcode}
+\end{figure}
+Any commands that refer to a node will generate error 1, 2 or 3 if such node does not exist. Any commands that refer to a port will generate error 5, 6 or 7 if such port does not exist. Any commands that refer to a time sequence resource will generate error 4 if such time sequence resource does not exist. Other command-spercified cases is described in Section \ref{sec:rpc}.
+\subsection{Control Commands}\label{sec:rpc}
+\subsubsection{Initialize Audio Engine}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{i[Int32 fb],[Int32 fs],[Int Nprocs]}
+\item[Command Arguments]\hfill
+  \begin{description}
+  \item[\texttt{fb}] Number of frames in each audio buffer.
+  \item[\texttt{fs}] The sampling rate of internal audio streams.
+  \item[\texttt{Nprocs}] The number of audio worker threads.
+  \end{description}
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command initialize the \Ksi audio engine. After a successful initialization, any previous nodes and audio I/O configuration will be cleared.
+\subsubsection{Initialize Audio}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{a}
+\item[Command Arguments] None.
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command initialize audio I/O of the \Ksi audio engine. Currently only stereo PortAudio output is implemented, so the command accepts no options at this stage. Configurable PortAudio I/O channels and bouncing to file is planned in the near future.
+\subsubsection{New node}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{n[Char type][Int32 cid]}
+\item[Command Arguments]\hfill
+  \begin{description}
+  \item[\texttt{type}] Need to be either ``n'' or ``f''. ``n'' indicates this is a normal node. ``f'' indicates this is the unique drain node of the audio processing graph.
+  \item[\texttt{cid}] The component ID of the component to be loaded into the node.
+  \end{description}
+\item[Return Format] \lstinline|[Int err];[Char+ emsg];[Int32 nid];[Char+ itypes];[Char+ otypes]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \item[\texttt{nid}] If successful, the node ID of the newly created node; otherwise zero is returned.
+  \item[\texttt{itypes}] If successful, the list of types of input ports in the newly created node; otherwise empty string is returned.
+  \item[\texttt{otypes}] If successful, the list of types of output ports in the newly created node; otherwise empty string is returned.
+  \end{description}
+\end{description}}\par
+This command creates a node with the component corresponding to the provided component id. The node can either be a normal node or the unique drain node in the audio processing graph.\par
+When type is ``f'', the operation will fail if a drain node already exists.
+\subsubsection{Make Wire}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{w[Int32 sid]:[Int32 sp]>[Int32 did]:[Int32 dp]x[SignalSample gain]}
+\item[Command Arguments]\hfill
+  \begin{description}
+  \item[\texttt{sid}] The node ID of the source node.
+  \item[\texttt{sp}] The index of the source port in the source node.
+  \item[\texttt{did}] The node ID of the destination node.
+  \item[\texttt{dp}] The index of the destination port in the destination node.
+  \item[\texttt{gain}] The gain applied to the signal going through this wire. Only valid if the type of the signal is float, integer or gate.
+  \end{description}
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command creates a wire between two ports. Supporting subtyping relations is planned.\par
+If a previous command has already created a wire between these two port, the gain value of the wire will be updated.\par
+The operation will fail if the two ports are not of the same type.
+\subsubsection{Make Bias}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{b[Int32 id]:[Int32 p]x[SignalSample bias]}
+\item[Command Arguments]\hfill
+  \begin{description}
+  \item[\texttt{id}] The node ID of the node to be manipulated.
+  \item[\texttt{p}] The index of the port to be manipulated in the node.
+  \item[\texttt{bias}] The value of bias to be added.
+  \end{description}
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command adds a bias to the port spercified by id and p. A constant signal of the bias value will be fed into the port mixer.\par
+If a previous command has already added a bias to this port, the bias value will be updated.\par
+The operation will fail if the type of the spercified port is not one of float, integer and gate.
+\subsubsection{Remove Node}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{r[Int32 id]}
+\item[Command Arguments]\hfill
+  \begin{description}
+  \item[\texttt{id}] The node ID of the node to be removed.
+  \end{description}
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command removes a node. Memory allocated to the node is reclaimed. Any wire with this node as source node or destination node is removed.
+\subsubsection{Remove Wire}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{u[Int32 sid]:[Int32 sp]>[Int32 did]:[Int32 dp]}
+\item[Command Arguments]\hfill
+  \begin{description}
+  \item[\texttt{sid}] The node ID of the source node.
+  \item[\texttt{sp}] The index of the source port in the source node.
+  \item[\texttt{did}] The node ID of the destination node.
+  \item[\texttt{dp}] The index of the destination port in the destination node.
+  \end{description}
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command removes the wire between the spercified two ports.\par
+The operation will fail if there is no such wire.
+\subsubsection{Detach Nodes}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{d[Int32 sid]>[Int32 did]}
+\item[Command Arguments]\hfill
+  \begin{description}
+  \item[\texttt{sid}] The node ID of the source node.
+  \item[\texttt{did}] The node ID of the destination node.
+  \end{description}
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command removes all wires between the spercified two nodes.
+\subsubsection{Send Command To Node}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{e[Int32 id] [Char+ cmd]}
+\item[Command Arguments]\hfill
+  \begin{description}
+  \item[\texttt{id}] The node ID of the node to be manipulated.
+  \item[\texttt{cmd}] The command string that is sent to the node.
+  \end{description}
+\item[Return Format] \lstinline|[Int err];[Char+ emsg];[Char+ itypes];[Char+ otypes]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \item[\texttt{itypes}] If successful, the list of types of input ports in the manipulated node; otherwise empty string is returned.
+  \item[\texttt{otypes}] If successful, the list of types of output ports in the manipulated node; otherwise empty string is returned.
+  \end{description}
+\end{description}}\par
+This command passes a command string to the spercified node. The component loaded in the node may update the node's internal state and port configuration based on the command string.
+\subsubsection{Pause Audio}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{P}
+\item[Command Arguments] None.
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command pauses the audio playback stream.
+\subsubsection{Resume Audio}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline{R}
+\item[Command Arguments] None.
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command resumes the audio playback stream.
+\subsubsection{Start Batch}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline|\{|
+\item[Command Arguments] None.
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command starts a committing batch. Any command after this command and before the next ``end batch'' command is not committed until the end of the batch.
+\subsubsection{End Batch}
+\inlinecode{
+\begin{description}\sloppy
+\item[Command Format] \lstinline|\}|
+\item[Command Arguments] None.
+\item[Return Format] \lstinline|[Int err];[Char+ emsg]|
+\item[Return values]\hfill
+  \begin{description}
+  \item[\texttt{err}] The error code of the operation.
+  \item[\texttt{emsg}] Optional error message string.
+  \end{description}
+\end{description}}\par
+This command end the current committing batch. All commands in this batch is committed.
+\end{document}
