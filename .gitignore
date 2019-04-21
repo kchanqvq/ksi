@@ -4,6 +4,7 @@
 *.pdf
 *.aux
 *.log
+*.so
 !.gitignore
 !.gitmodules
 build
