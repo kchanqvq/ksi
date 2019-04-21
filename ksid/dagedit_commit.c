@@ -1,13 +1,9 @@
 #include "dagedit_commit.h"
 #include "dagedit_kernels.h"
-#define INTERVAL 1
 void *ksiMVCCCommitter(void *args){
         KsiEngine *e = args;
         while(1){
-                if(ksiSemTryWait(&e->committingSem,INTERVAL,0)){
-                        ksiWorkQueueTryFree(&e->tasks, e->nprocs+1);
-                        continue;
-                }
+                ksiSemWait(&e->committingSem);
                 ksiEnginePlayingLock(e);
                 if(e->playing == ksiEnginePlaying){
                         if(atomic_load_explicit(&e->epoch,memory_order_consume)!=atomic_load_explicit(&e->audioEpoch,memory_order_consume)&&e->driver_env)

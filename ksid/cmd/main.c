@@ -30,9 +30,12 @@ static int testAudioCallback( const void *input,
         fn(input,output,userData);
         return 0;
         }*/
+#include "config.h"
 int main(){
         KsiEngine e;
-        e.nprocs=0;
+        e.playing = -2;
+        KsiEngineWorkerPool wp;
+        ksiEngineWorkerPoolInit(&wp, get_ncpus());
         PaError perr;
         const char *errtxt;
         char *line;
@@ -41,7 +44,7 @@ int main(){
 
         while(1){
                 line = linenoise("KSI> ");
-                if(!line||consume_line(&e, line, &err, &errtxt,NULL,fprintf,stdout)){
+                if(!line||consume_line(&e,&wp, line, &err, &errtxt,NULL,fprintf,stdout)){
                         free(line);
                         break;
                 }
@@ -49,7 +52,7 @@ int main(){
                 ksiEngineCommit(&e); //Make the change visible to audio workers
                 free(line);
         }
-        if(e.nprocs){
+        if(e.playing!=-2){
                 fputs("Finalizing KSI Engine.\n",stdout);
                 if(e.playing)
                         ksiEngineStop(&e);
@@ -59,6 +62,7 @@ int main(){
                         if( perr != paNoError ) goto pa_error;
                 }
         }
+        ksiEngineWorkerPoolDestroy(&wp);
         return 0;
 pa_error:
         errtxt = Pa_GetErrorText(perr);

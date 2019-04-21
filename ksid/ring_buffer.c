@@ -35,15 +35,10 @@ void ksiRingBufferInit(KsiRingBuffer *rb,int nprocs){
         atomic_init(&rb->epoch,0);
         //printf("init RB %lld\n",rb);
         while(nprocs --){
-                atomic_init(&rb->ebrEntries[nprocs].active, 0);
-                rb->ebrEntries[nprocs].epoch = 0;
-                int i = 3;
-                while(i --)
-                        rb->ebrEntries[nprocs].freelist[i] = NULL;
+                ksiRingBufferEBREntryInit(rb->ebrEntries + nprocs);
         }
 }
 //#define CNT
-static inline
 #ifdef CNT
 int
 #else
@@ -93,18 +88,15 @@ void ksiRingBufferDestroy(KsiRingBuffer *rb,int nprocs){
         printf("%d objects freed during finalization. %d live objects.\n", cnt, acnt);
 #endif
 }
-void ksiRingBufferTryFree(KsiRingBuffer *rb,int nprocs,int tid){
+int ksiRingBufferTryFree(KsiRingBuffer *rb,int nprocs,int tid){
         uint64_t epoch = atomic_load_explicit(&rb->epoch,memory_order_acquire);
         int i = nprocs;
-        int canFree = 1;
         while(i--){
                 if(atomic_load_explicit(&rb->ebrEntries[i].active,memory_order_acquire) && (rb->ebrEntries[i].epoch != epoch))
-                        canFree = 0;
+                        return -1;
         }
-        if(!canFree)
-                return;
         uint64_t dummy = epoch;
-        if(atomic_compare_exchange_strong_explicit(&rb->epoch,&dummy,(epoch+1)%3,memory_order_release,memory_order_relaxed)){
+        if(atomic_compare_exchange_strong_explicit(&rb->epoch,&dummy,(epoch+1)%3,memory_order_acquire,memory_order_relaxed)){
                 int i = nprocs;
 #ifdef CNT
                 int cnt = 0;
@@ -121,6 +113,7 @@ void ksiRingBufferTryFree(KsiRingBuffer *rb,int nprocs,int tid){
 #endif
         }
         rb->ebrEntries[tid].epoch = (epoch+1)%3;
+        return 0;
 }
 void ksiRingBufferPush(KsiRingBuffer *rb,void *data,int tid){
         KsiRingBufferSegment *head = rb->head;
@@ -146,10 +139,6 @@ void ksiRingBufferPush(KsiRingBuffer *rb,void *data,int tid){
 #endif
 }
 void *ksiRingBufferTake(KsiRingBuffer *rb,int nprocs,int tid){
-#ifdef FREE
-        atomic_store_explicit(&rb->ebrEntries[tid].active, 1, memory_order_relaxed);
-        rb->ebrEntries[tid].epoch = atomic_load_explicit(&rb->epoch,memory_order_acquire);
-#endif
         KsiRingBufferSegment *tail = atomic_load_explicit(&rb->tail,memory_order_acquire);
         KsiRingBufferSegment *prevTail;
         while(tail){
@@ -157,11 +146,7 @@ void *ksiRingBufferTake(KsiRingBuffer *rb,int nprocs,int tid){
                 uint64_t _head_idx = atomic_load_explicit(&tail->head_idx,memory_order_acquire);
                 if(_tail_idx+1 < _head_idx+1){
                         void *ret = tail->buffer[_tail_idx%ksiRingBufferNodeLength].val;
-                        if(atomic_compare_exchange_strong_explicit(&tail->tail_idx, &_tail_idx, _tail_idx+1,memory_order_release,memory_order_relaxed)){
-#ifdef FREE
-                                atomic_store_explicit(&rb->ebrEntries[tid].active, 0, memory_order_release);
-#endif
-
+                        if(atomic_compare_exchange_weak_explicit(&tail->tail_idx, &_tail_idx, _tail_idx+1,memory_order_acquire,memory_order_relaxed)){
                                 return ret;
                         }
                         else
@@ -186,16 +171,20 @@ void *ksiRingBufferTake(KsiRingBuffer *rb,int nprocs,int tid){
                                 return ksiRingBufferFailedVal;
                 }
         }
-#ifdef FREE
-        atomic_store_explicit(&rb->ebrEntries[tid].active, 0, memory_order_release);
-#endif
         return ksiRingBufferFailedVal;
 }
-void *ksiRingBufferPop(KsiRingBuffer *rb,int nprocs,int tid){
+void ksiRingBufferConsumerEnter(KsiRingBuffer *rb,int tid){
 #ifdef FREE
         atomic_store_explicit(&rb->ebrEntries[tid].active, 1, memory_order_relaxed);
         rb->ebrEntries[tid].epoch = atomic_load_explicit(&rb->epoch,memory_order_acquire);
 #endif
+}
+void ksiRingBufferConsumerLeave(KsiRingBuffer *rb,int tid){
+#ifdef FREE
+        atomic_store_explicit(&rb->ebrEntries[tid].active, 0, memory_order_release);
+#endif
+}
+void *ksiRingBufferPop(KsiRingBuffer *rb,int nprocs,int tid){
         KsiRingBufferSegment *head = rb->head;
         while(1){
 
@@ -206,19 +195,12 @@ void *ksiRingBufferPop(KsiRingBuffer *rb,int nprocs,int tid){
                 if(_tail_idx + 1 < _head_idx + 1){
                         atomic_store_explicit(&head->head_idx,_head_idx,memory_order_relaxed);
                         void *ret = head->buffer[_head_idx%ksiRingBufferNodeLength].val;
-#ifdef FREE
-                        atomic_store_explicit(&rb->ebrEntries[tid].active, 0, memory_order_release);
-#endif
                         return ret;
                 }
                 else if(_tail_idx == _head_idx){
                         _head_idx ++;
                         void *ret = head->buffer[_tail_idx%ksiRingBufferNodeLength].val;
                         if(atomic_compare_exchange_strong_explicit(&head->tail_idx, &_tail_idx, _tail_idx+1,memory_order_release,memory_order_relaxed)){
-#ifdef FREE
-                                atomic_store_explicit(&rb->ebrEntries[tid].active, 0, memory_order_release);
-#endif
-
                                 return ret;
                         }
                         else
@@ -238,9 +220,6 @@ void *ksiRingBufferPop(KsiRingBuffer *rb,int nprocs,int tid){
 #endif
                                 continue;
                         }
-#ifdef FREE
-                        atomic_store_explicit(&rb->ebrEntries[tid].active, 0, memory_order_release);
-#endif
                         return ksiRingBufferFailedVal;
                 }
         }

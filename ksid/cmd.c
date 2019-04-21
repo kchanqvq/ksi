@@ -8,7 +8,7 @@
 #include "io/pa_io.h"
 #include <libgen.h>
 //static counter;
-int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_str,int32_t *idRet,log_function lf,void *lf_args){
+int consume_line(KsiEngine *e,KsiEngineWorkerPool *wp,char *line,KsiError *ptrerr,const char **pcli_err_str,int32_t *idRet,log_function lf,void *lf_args){
         //counter++;
         //printf("Command #%d\n",counter);
         //fputs(line,stdout);
@@ -195,18 +195,17 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
         case 'i':{
                 cmd = "Initialize engine";
                 lptr++;
-                int nprocs;
                 int32_t fb,fs;
-                int readcount = sscanf(lptr,"%"SCNd32",%"SCNd32",%d",&fb,&fs,&nprocs);
-                CHECK_READ(3);
-                if(e->nprocs){
+                int readcount = sscanf(lptr,"%"SCNd32",%"SCNd32,&fb,&fs);
+                CHECK_READ(2);
+                if(e->playing!=-2){
                         if(e->playing){
                                 ksiEngineStop(e);
                         }
                         paIODestroy(e);
                         ksiEngineDestroy(e);
                 }
-                ksiEngineInit(e, fb, fs, nprocs);
+                ksiEngineInit(e,wp, fb, fs);
                 break;
         }
         case 'a':{
@@ -268,7 +267,7 @@ int consume_line(KsiEngine *e,char *line,KsiError *ptrerr,const char **pcli_err_
                         errno = 0;
                         goto rt_err;
                 }
-                if(consume_file(e, fp, ptrerr, pcli_err_str,lf,lf_args)){
+                if(consume_file(e,wp, fp, ptrerr, pcli_err_str,lf,lf_args)){
                         fputs("In command list file: ", stderr);
                         fputs(lptr, stderr);
                         fputc('\n',stderr);
@@ -345,7 +344,8 @@ quit:
         return 1;
 }
 #define BUFFER_SIZE 64
-int consume_file(KsiEngine *e,FILE *fp,KsiError *perr,const char **pcli_err_str,log_function lf,void *lf_args){
+int consume_file(KsiEngine *e,KsiEngineWorkerPool *wp, FILE *fp,KsiError *perr,
+                 const char **pcli_err_str,log_function lf,void *lf_args){
         char *line = NULL;
         size_t cap = 0;
         ssize_t len;
@@ -353,7 +353,7 @@ int consume_file(KsiEngine *e,FILE *fp,KsiError *perr,const char **pcli_err_str,
         ssize_t ln=0;
         while((len=getline(&line, &cap, fp))>0){
                 ln++;
-                if(consume_line(e,line, perr, pcli_err_str, NULL,lf,lf_args)){
+                if(consume_line(e,wp,line, perr, pcli_err_str, NULL,lf,lf_args)){
                         break;
                 }
                 if(*perr){

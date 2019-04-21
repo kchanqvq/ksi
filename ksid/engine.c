@@ -15,16 +15,88 @@
 #define SLEEP_NSEC_MAX_FAIL 7
 #define SLEEP_ENABLED
 KsiError _ksiEngineReset(KsiEngine *e);
-
-void ksiEngineInit(KsiEngine *e,int32_t fb,int32_t fs,int nprocs){
+#include "lcrq/lcrq.h"
+#define ksiEngineWorkerPoolStateRunning 1
+#define ksiEngineWorkerPoolStateFinalizing 0
+static void* ksiEngineAudioWorker(void *args);
+#define GC_SEC 0
+#define GC_NSEC 10000000
+static void* ksiEngineWorkerPoolGC(void *args){
+        KsiEngineWorkerPool *wp = args;
+        while(1){
+                if(!wp->state)
+                        break;
+                ksiSemTryWait(&wp->gcSem, GC_SEC, GC_NSEC);
+                ksiWorkQueueTryFree(&wp->tasks, wp->nprocs);
+        }
+        return NULL;
+}
+void ksiEngineWorkerPoolInit(KsiEngineWorkerPool *wp, int nprocs){
+        wp->nprocs = nprocs;
+        wp->state = ksiEngineWorkerPoolStateRunning;
+        wp->workers = (pthread_t *)ksiMalloc(sizeof(pthread_t)*nprocs);
+        ksiWorkQueueInit(&wp->tasks, nprocs+1);//MASTER, GC
+        ksiBSemInit(&wp->hanging, 0, nprocs);
+        atomic_init(&wp->waitingCount,0);
+        ksiSemInit(&wp->waitingSem, 0, 0);
+        ksiSemInit(&wp->gcSem, 0, 0);
+        pthread_attr_t attr;
+        struct sched_param param;
+        PERROR_GUARDED("Init default POSIX thread attribute for audio worker",
+                       pthread_attr_init(&attr));
+        PERROR_GUARDED("Get default scheduling param for audio worker",
+                       pthread_attr_getschedparam(&attr, &param));
+        param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+        PERROR_GUARDED("Set FIFO scheduling policy for audio worker",
+                       pthread_attr_setschedpolicy(&attr, SCHED_FIFO));
+        PERROR_GUARDED("Set scheduling param for audio worker",
+                       pthread_attr_setschedparam(&attr, &param));
+        PERROR_GUARDED("Create GC POSIX thread",
+                       pthread_create(&wp->gc_thread, NULL, ksiEngineWorkerPoolGC, wp));
+        for(int i=0;i<wp->nprocs;i++){
+                PERROR_GUARDED("Create audio worker POSIX thread",
+                               pthread_create(wp->workers+i, &attr, ksiEngineAudioWorker, wp));
+        }
+        PERROR_GUARDED("Destroy POSIX thread attribute for audio worker",
+                       pthread_attr_destroy(&attr));
+}
+void ksiEngineWorkerPoolDestroy(KsiEngineWorkerPool *wp){
+        wp->state = ksiEngineWorkerPoolStateFinalizing;
+        if(!atomic_load_explicit(&wp->enginesAlive,memory_order_acquire))
+                ksiBSemPost(&wp->hanging);
+        int64_t i=atomic_load(&wp->waitingCount);
+        while(i--)
+                ksiSemPost(&wp->waitingSem);
+        //ksiSemPost(&e->masterSem);
+        for(int i=0;i<wp->nprocs;i++){
+                PERROR_GUARDED("Stop audio worker POSIX thread",
+                               pthread_join(wp->workers[i], NULL));
+        }
+        PERROR_GUARDED("Stop GC POSIX thread",
+                       pthread_join(wp->gc_thread, NULL));
+        ksiSemDestroy(&wp->gcSem);
+        ksiSemDestroy(&wp->waitingSem);
+        ksiWorkQueueDestroy(&wp->tasks);
+        ksiBSemDestroy(&wp->hanging);
+        free(wp->workers);
+}
+static inline void ksiEngineWorkerPoolOnlineIncrease(KsiEngineWorkerPool *wp){
+        if(!atomic_load_explicit(&wp->enginesAlive, memory_order_seq_cst))
+                ksiBSemPost(&wp->hanging);
+        atomic_fetch_add_explicit(&wp->enginesAlive, 1, memory_order_seq_cst);
+}
+static inline void ksiEngineWorkerPoolOnlineDecrease(KsiEngineWorkerPool *wp){
+        atomic_fetch_sub_explicit(&wp->enginesAlive, 1, memory_order_seq_cst);
+}
+void ksiEngineInit(KsiEngine *e,KsiEngineWorkerPool *wp,int32_t fb,int32_t fs){
+        e->wp = wp;
         e->framesPerBuffer = fb;
         e->framesPerSecond = fs;
         e->driver_env = NULL;
         e->finalNode[0] = NULL;
         e->finalNode[1] = NULL;
-        e->workers = (pthread_t *)ksiMalloc(sizeof(pthread_t)*nprocs);
-        e->nprocs = nprocs;
         e->timeStamp = 0;
+        ksiLCRQProducerHandleInit(&wp->tasks.masterQueue, &e->ph);
         ksiVecInit(&e->nodes[0], ksiEngineNodesDefaultCapacity);
         ksiVecInit(&e->nodes[1], ksiEngineNodesDefaultCapacity);
         atomic_init(&e->epoch, 0);
@@ -35,11 +107,9 @@ void ksiEngineInit(KsiEngine *e,int32_t fb,int32_t fs,int nprocs){
         ksiSPSCPtrListInit(&e->mallocBufs);
         ksiSPSCPtrListInit(&e->freeBufs);
 
-        ksiWorkQueueInit(&e->tasks, nprocs+2);//MASTER, WORKERS, COMMITTER(for GC)
         ksiSemInit(&e->masterSem, 0, 0);
         ksiSemInit(&e->committingSem, 0, 0);
         ksiSemInit(&e->migratedSem, 0, 0);
-        ksiBSemInit(&e->hanging, 0, nprocs);
         ksiCondInit(&e->committedCond);
 
         pthread_mutexattr_t attr;
@@ -54,31 +124,16 @@ void ksiEngineInit(KsiEngine *e,int32_t fb,int32_t fs,int nprocs){
         e->playing = 0;
         atomic_flag_test_and_set(&e->notRequireReset);
 
-        atomic_init(&e->waitingCount,0);
-        ksiSemInit(&e->waitingSem, 0, 0);
         //atomic_init(&e->cleanupCounter,0);
 }
-static inline KsiError impl_ksiEngineStop(KsiEngine *e,int state){
+//Call ksiEngineDestroyChild before calling ksiEngineDestroy
+int impl_ksiEngineStop(KsiEngine *e,int state){
         ksiEnginePlayingLock(e);
-        if(!(e->playing>0)){
-                ksiEnginePlayingUnlock(e);
-                return ksiErrorAudioNotStarted;
-        }
-        if(e->playing==ksiEnginePaused)
-                ksiBSemPost(&e->hanging);
         e->playing = state;
-        int64_t i=atomic_load(&e->waitingCount);
-        while(i--)
-                ksiSemPost(&e->waitingSem);
-        //ksiSemPost(&e->masterSem);
-        for(int i=0;i<e->nprocs;i++){
-                PERROR_GUARDED("Stop audio worker POSIX thread",
-                               pthread_join(e->workers[i], NULL));
-        }
+        ksiEngineWorkerPoolOnlineDecrease(e->wp);
         ksiEnginePlayingUnlock(e);
         return ksiErrorNone;
 }
-//Call ksiEngineDestroyChild before calling ksiEngineDestroy
 void ksiEngineDestroy(KsiEngine *e){
         if(e->playing)
                 impl_ksiEngineStop(e,ksiEngineFinalizing);
@@ -88,11 +143,9 @@ void ksiEngineDestroy(KsiEngine *e){
         ksiSemPost(&e->committingSem); // Get the committer not waiting
         PERROR_GUARDED("Stop DAG modification committing POSIX thread",
                        pthread_join(e->committer, NULL));
-
-        e->nprocs = 0;
         ksiVecDestroy(&e->nodes[0]);
         ksiVecDestroy(&e->nodes[1]);
-        ksiSemDestroy(&e->waitingSem);
+        ksiLCRQProducerHandleDestroy(&e->wp->tasks.masterQueue, &e->ph);
 
 
         ksiEnginePlayingLock(e);
@@ -109,7 +162,7 @@ void ksiEngineDestroy(KsiEngine *e){
         ksiVecDestroy(&e->timeseqResources);
         //while(!atomic_compare_exchange_weak(&e->cleanupCounter, &e->nprocs, 0));
 
-        ksiWorkQueueDestroy(&e->tasks);
+
         ksiSPSCCmdListDestroy(&e->syncCmds);
         ksiSPSCPtrListDestroy(&e->freeBufs);
         ksiSPSCPtrListDestroy(&e->mallocBufs);
@@ -118,19 +171,18 @@ void ksiEngineDestroy(KsiEngine *e){
         ksiSemDestroy(&e->committingSem);
         ksiSemDestroy(&e->migratedSem);
         ksiCondDestroy(&e->committedCond);
-        ksiBSemDestroy(&e->hanging);
-        free(e->workers);
+
 }
 
-static inline void enqueue_signaled(KsiEngine *e,KsiWorkQueue *q,int tid,void *v){
+static inline void enqueue_signaled(KsiEngineWorkerPool *wp,KsiWorkQueue *q,int tid,void *v){
         ksiWorkQueueCommit(q, tid, v);
         //printf("enqueued\n", c);
 #ifdef SLEEP_ENABLED
-        int64_t i = atomic_load_explicit(&e->waitingCount,memory_order_relaxed);
+        int64_t i = atomic_load_explicit(&wp->waitingCount,memory_order_relaxed);
         if(i>0){
                 //printf("post %d\n",i);
-                atomic_fetch_sub_explicit(&e->waitingCount, 1,memory_order_relaxed);
-                ksiSemPost(&e->waitingSem);
+                atomic_fetch_sub_explicit(&wp->waitingCount, 1,memory_order_relaxed);
+                ksiSemPost(&wp->waitingSem);
         }
 #endif
 }
@@ -172,8 +224,11 @@ int ksiEngineAudioCallback( const void *input,
                  finalNode->outputBuffer[i].d = ((KsiData **)output)[i];
         ksiVecBeginIterate(&e->nodes[epoch], i);
         KsiNode *n = (KsiNode *)i;
-        if(!n->depNum)
-                enqueue_signaled(e,&e->tasks, 0, n);
+        ksiLCRQProducerEnter(&e->wp->tasks.masterQueue, &e->ph);
+        if(!n->depNum){
+                ksiLCRQEnqueue(&e->wp->tasks.masterQueue, &e->ph, n);
+        }
+        ksiLCRQProducerLeave(&e->wp->tasks.masterQueue, &e->ph);
         ksiVecEndIterate();
         ksiSemWait(&e->masterSem);
         for(int i=fillChans+1;i<audioChans;i++)
@@ -181,25 +236,30 @@ int ksiEngineAudioCallback( const void *input,
         e->timeStamp+=frameCount;
         return 0;
 }
-static _Atomic int thCounter = 1;
-static inline KsiNode *dequeue_blocked(KsiEngine *e,int tid){
+static _Atomic int thCounter = 0;
+static inline KsiNode *dequeue_blocked(KsiEngineWorkerPool *wp,int tid){
         void *result = ksiRingBufferFailedVal;
         int trials = 0;
         int failed = 0;
-        result = ksiWorkQueueGet(&e->tasks, tid);
+        result = ksiWorkQueueGet(&wp->tasks, tid);
         if(result == ksiRingBufferFailedVal){
-                result = ksiRingBufferTake(&e->tasks.rbs[0], e->tasks.nprocs, tid);
+                LCRQ_DEQUEUE_START(&wp->tasks.masterQueue, tid);
+                result = ksiLCRQDequeue(&wp->tasks.masterQueue,
+                                        tid);
+                LCRQ_DEQUEUE_END(&wp->tasks.masterQueue, tid);
         }
+        ksiWorkQueueBeginTake(&wp->tasks, tid);
         while(result == ksiRingBufferFailedVal){
-                if(e->playing!=ksiEnginePlaying)
+                if(!atomic_load_explicit(&wp->enginesAlive,memory_order_seq_cst))
                         break;
-                result = ksiWorkQueueTake(&e->tasks, tid);
+                result = ksiWorkQueueTake(&wp->tasks, tid);
 #ifdef SLEEP_ENABLED
                 trials ++;
                 if(trials > TRIALS_BEFORE_HANGING){
                         //printf("waiting\n");
-                        atomic_fetch_add_explicit(&e->waitingCount,1,memory_order_relaxed);
-                        if(ksiSemTryWait(&e->waitingSem,0,SLEEP_NSEC_BASE<<failed)){
+                        atomic_fetch_add_explicit(&wp->waitingCount,1,memory_order_relaxed);
+                        ksiWorkQueueEndTake(&wp->tasks, tid);
+                        if(ksiSemTryWait(&wp->waitingSem,0,SLEEP_NSEC_BASE<<failed)){
                                 if(failed < SLEEP_NSEC_MAX_FAIL){
                                         failed ++;
                                 }
@@ -208,9 +268,11 @@ static inline KsiNode *dequeue_blocked(KsiEngine *e,int tid){
                                 failed=0;
                         }
                         trials = 0;
+                        ksiWorkQueueBeginTake(&wp->tasks, tid);
                 }
 #endif
         }
+        ksiWorkQueueEndTake(&wp->tasks, tid);
         //printf("dequeued\n");
         return (KsiNode *)result;
 }
@@ -229,21 +291,24 @@ static inline void ksiNodeFuncWrapper(KsiNode *n){
         }
 }
 static void* ksiEngineAudioWorker(void *args){
-        KsiEngine *e = (KsiEngine *)args;
+        KsiEngineWorkerPool *wp = args;
         int tid = atomic_fetch_add(&thCounter, 1);
-        KsiNode *n = dequeue_blocked(e, tid);
-        int32_t bufsize = e->framesPerBuffer;
+        KsiNode *n = dequeue_blocked(wp, tid);
         while(1){
                 if(n==ksiRingBufferFailedVal){
-                        if(e->playing == ksiEnginePaused){
-                                ksiBSemWait(&e->hanging);
-                                n = dequeue_blocked(e, tid);
+                        if(!atomic_load_explicit(&wp->enginesAlive,memory_order_seq_cst)){
+                                if(!wp->state)
+                                        break;
+                                ksiBSemWait(&wp->hanging);
+                                n = dequeue_blocked(wp, tid);
                                 continue;
                         }
                         else
                                 break;
                 }
                 //break;
+                KsiEngine *e = n->e;
+                int32_t bufsize = e->framesPerBuffer;
                 for(int32_t i=0;i<n->inputCount;i++){
 #define cachePtr(buf) ((buf) + bufsize - 1)
                         int dirty = 0;
@@ -318,7 +383,7 @@ static void* ksiEngineAudioWorker(void *args){
                                 if(dep == s->depNum - 1){
                                         atomic_store(&s->depCounter, 0);
                                         if(foundContinuation){
-                                                enqueue_signaled(e,&e->tasks, tid, s);
+                                                enqueue_signaled(wp,&wp->tasks, tid, s);
                                         }
                                         else{
                                                 foundContinuation = 1;
@@ -328,12 +393,12 @@ static void* ksiEngineAudioWorker(void *args){
                                 sn = sn->next;
                         }
                         if(!foundContinuation)
-                                n = dequeue_blocked(e, tid);
+                                n = dequeue_blocked(wp, tid);
                         break;
                 }
                 case ksiNodeTypeOutputFinal:
-                        ksiSemPost(&e->masterSem);
-                        n = dequeue_blocked(e, tid);
+                        ksiSemPost(&n->e->masterSem);
+                        n = dequeue_blocked(wp, tid);
                         break;
                 }
         }
@@ -367,29 +432,12 @@ KsiError ksiEngineLaunch(KsiEngine *e){
         }
         _ksiEngineReset(e);
         e->playing = 1;
-        pthread_attr_t attr;
-        struct sched_param param;
-        PERROR_GUARDED("Init default POSIX thread attribute for audio worker",
-                       pthread_attr_init(&attr));
-        PERROR_GUARDED("Get default scheduling param for audio worker",
-                       pthread_attr_getschedparam(&attr, &param));
-        param.sched_priority = sched_get_priority_max(SCHED_FIFO);
-        PERROR_GUARDED("Set FIFO scheduling policy for audio worker",
-                       pthread_attr_setschedpolicy(&attr, SCHED_FIFO));
-        PERROR_GUARDED("Set scheduling param for audio worker",
-                       pthread_attr_setschedparam(&attr, &param));
-        for(int i=0;i<e->nprocs;i++){
-                PERROR_GUARDED("Create audio worker POSIX thread",
-                               pthread_create(e->workers+i, &attr, ksiEngineAudioWorker, e));
-        }
-        PERROR_GUARDED("Destroy POSIX thread attribute for audio worker",
-                       pthread_attr_destroy(&attr));
+        ksiEngineWorkerPoolOnlineIncrease(e->wp);
         ksiEnginePlayingUnlock(e);
         return ksiErrorNone;
 }
 
 KsiError ksiEngineStop(KsiEngine *e){
-        atomic_store(&thCounter, 1);
         return impl_ksiEngineStop(e, 0);
 }
 KsiError ksiEnginePause(KsiEngine *e){
@@ -404,6 +452,7 @@ KsiError ksiEnginePause(KsiEngine *e){
                 goto ret;
         }
         e->playing = ksiEnginePaused;
+        ksiEngineWorkerPoolOnlineDecrease(e->wp);
 ret:
         ksiEnginePlayingUnlock(e);
         return ksiErrorNone;
@@ -420,7 +469,6 @@ KsiError ksiEngineResume(KsiEngine *e){
                 goto ret;
         }
         e->playing = ksiEnginePlaying;
-        ksiBSemPost(&e->hanging);
         //ksiSemPost(&e->masterSem);
 ret:
         ksiEnginePlayingUnlock(e);

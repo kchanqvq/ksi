@@ -13,12 +13,26 @@
 #ifndef ALIGN
 #define ALIGN __attribute__((aligned(_CONFIG_CACHE_SIZE*2)))
 #endif
+typedef struct _KsiEngineWorkerPool{
+        int state;
+        int nprocs;// not included master thread!
+        pthread_t *workers;
+        pthread_t gc_thread;
+        KsiWorkQueue tasks;
+        _Atomic int64_t waitingCount;
+        KsiSem waitingSem;
+        KsiSem gcSem;
+        KsiBSem hanging;
+        _Atomic int64_t enginesAlive;
+} KsiEngineWorkerPool;
 typedef struct _KsiEngine{
         int32_t framesPerBuffer;
         int32_t framesPerSecond;
         void *driver_env;
         size_t timeStamp;
 
+        KsiEngineWorkerPool *wp;
+        KsiLCRQProducerHandle ph;
         /* The approach here:
            [When the engine is online]
            1) The 2 versions are all synchronized (sharing any buffer), audio thread is using nodes[epoch]. epoch == audioEpoch.
@@ -34,24 +48,19 @@ typedef struct _KsiEngine{
          */
         KsiVec nodes[2];//2 epoches MVCC
         KsiVec timeseqResources;// use RBTree for midi and automation
-        int nprocs;// not included master thread! //If 0, that means the system is not initialized
-#define CHECK_INITIALIED(e) if(!e->nprocs) return ksiErrorUninitialized;
-        pthread_t *workers;
+#define CHECK_INITIALIED(e) if(e->playing == -2) return ksiErrorUninitialized;
         pthread_t committer;
         KsiSem committingSem; // editor -> committer: I've finished a bunch of editing
         KsiSem migratedSem; // audio -> committer: I've updated audioEpoch
         KsiCond committedCond; // committer -> editor: I've started commiting
-        KsiWorkQueue tasks;
         KsiSem masterSem;
-
-        _Atomic int64_t waitingCount;
-        KsiSem waitingSem;
 
         void *finalNode[2];//One for each version
 #define ksiEngineStopped 0
 #define ksiEnginePlaying 1
 #define ksiEnginePaused 2
 #define ksiEngineFinalizing -1
+#define ksiEngineUninitialized -2
         int playing;
         pthread_mutex_t playingMutex;// Protecting playing. Since playing is read-only for audio threads this won't block audio threads.
         // Both editing and commitment thread try to obtain this lock when editing so it ensures no 2 editings are performing on the cold version at the same time.
@@ -59,7 +68,6 @@ typedef struct _KsiEngine{
 
         atomic_flag notRequireReset;
         // _Atomic int cleanupCounter;
-        KsiBSem hanging;
 
         KsiSPSCCmdList syncCmds;// Editing to be synchronized
         KsiSPSCPtrList mallocBufs;// Alocated buffers
@@ -78,7 +86,9 @@ static inline void ksiEnginePlayingLock(KsiEngine *e){
 static inline void ksiEnginePlayingUnlock(KsiEngine *e){
         pthread_mutex_unlock(&e->playingMutex);
 }
-void ksiEngineInit(KsiEngine *e,int32_t framesPerBuffer, int32_t framesPerSecond, int nprocs);
+void ksiEngineWorkerPoolInit(KsiEngineWorkerPool *wp, int nprocs);
+void ksiEngineWorkerPoolDestroy(KsiEngineWorkerPool *wp);
+void ksiEngineInit(KsiEngine *e,KsiEngineWorkerPool *wp,int32_t framesPerBuffer, int32_t framesPerSecond);
 void ksiEngineDestroy(KsiEngine *e);
 
 int ksiEngineAudioCallback( const void *input,

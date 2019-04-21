@@ -78,12 +78,11 @@ Any commands that refer to a node will generate error 1, 2 or 3 if such node doe
 \subsubsection{Initialize Audio Engine}
 \inlinecode{
 \begin{description}\sloppy
-\item[Command Format] \lstinline{i[Int32 fb],[Int32 fs],[Int Nprocs]}
+\item[Command Format] \lstinline{i[Int32 fb],[Int32 fs]}
 \item[Command Arguments]\hfill
   \begin{description}
   \item[\texttt{fb}] Number of frames in each audio buffer.
   \item[\texttt{fs}] The sampling rate of internal audio streams.
-  \item[\texttt{Nprocs}] The number of audio worker threads.
   \end{description}
 \item[Return Format] \lstinline|[Int err];[Char+ emsg]|
 \item[Return values]\hfill

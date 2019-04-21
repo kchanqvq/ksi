@@ -159,8 +159,7 @@ KsiError ksiEngineSendEditingCommand(KsiEngine *e,int32_t id,const char *args,co
         return ksiErrorNone;
 }
 KsiError ksiEngineCommit(KsiEngine *e){
-        if(!e->nprocs)
-                return ksiErrorUninitialized;
+        CHECK_INITIALIED(e);
         if(e->syncCmds.head == atomic_load_explicit(&e->syncCmds.tail, memory_order_relaxed)){
                 return ksiErrorNone;
         }
