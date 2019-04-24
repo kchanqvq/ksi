@@ -1,0 +1,28 @@
+(define-record-type dynamic-vector
+  (fields (mutable length)
+          (mutable content-vector))
+  (protocol
+   (lambda (p)
+     (lambda ()
+       (p 0 (make-vector 4))))))
+(define (dynamic-vector-ref vec index default)
+  (if (< index (dynamic-vector-length vec))
+      (vector-ref (dynamic-vector-content-vector vec) index)
+      default))
+(define (dynamic-vector-set! vec index val)
+  (if (< index (dynamic-vector-length vec))
+      (vector-set! (dynamic-vector-content-vector vec) index val)
+      (assertion-violation 'dynamic-vector-set! "index out of range" vec index val)))
+(define (dynamic-vector-resize vec new-size)
+  (define content (dynamic-vector-content-vector vec))
+  (define old-cap (vector-length content))
+  (dynamic-vector-length-set! vec new-size)
+  (if (> new-size old-cap)
+      (letrec ([new-content (make-vector (* 2 old-cap))]
+               [h (lambda (src-vec des-vec idx)
+                    (if (< idx old-cap)
+                        (begin
+                          (vector-set! des-vec idx (vector-ref src-vec idx))
+                          (h src-vec des-vec (+ idx 1)))))])
+        (h content new-content 0)
+        (dynamic-vector-content-vector-set! vec new-content))))
